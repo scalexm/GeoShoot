@@ -23,7 +23,6 @@ private:
     compute::command_queue Queue_;
 
     int NX_, NY_, NZ_, NXfft_, NYfft_, NZfft_;
-    int ComplexPadding_;
 
     void MakeSumOf7AnisotropicGaussianFilters(
         const std::array<float, 7> & weights = { 100.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f },
@@ -34,7 +33,7 @@ private:
     );
 
 public:
-    FFTConvolver();
+    FFTConvolver(compute::command_queue);
     FFTConvolver(const FFTConvolver &) = delete;
     FFTConvolver(FFTConvolver &&) = delete;
     FFTConvolver & operator =(const FFTConvolver &) = delete;

@@ -11,7 +11,7 @@
 
 #define CHECK_ERROR(err) if (err != 0) { throw compute::opencl_error { err }; }
 
-FFTConvolver::FFTConvolver() : Queue_ { GetContext(), GetDevice() } {
+FFTConvolver::FFTConvolver(compute::command_queue queue) : Queue_ { std::move(queue) } {
 }
 
 FFTConvolver::~FFTConvolver() {
@@ -32,8 +32,8 @@ void FFTConvolver::InitiateConvolver(
 
     //smaller size higher than 'this->NX' and being a power of 2
     NXfft_ = (int)(pow(2., floor(log(NX) / log(2.) + 0.99999)) + 0.00001);
-	NYfft_ = (int)(pow(2., floor(log(NY) / log(2.) + 0.99999)) + 0.00001);
-	NZfft_ = (int)(pow(2., floor(log(NZ) / log(2.) + 0.99999)) + 0.00001);
+    NYfft_ = (int)(pow(2., floor(log(NY) / log(2.) + 0.99999)) + 0.00001);
+    NZfft_ = (int)(pow(2., floor(log(NZ) / log(2.) + 0.99999)) + 0.00001);
 
     Filter_ = compute::vector<float>(2 * NXfft_  * NYfft_ * NZfft_, GetContext());
     Signal_ = compute::vector<float>(2 * NXfft_  * NYfft_ * NZfft_, GetContext());
@@ -286,6 +286,4 @@ void FFTConvolver::Convolution(compute::vector<float> & field, int NT) {
         copyKernel.set_arg(11, 2);
         Queue_.enqueue_nd_range_kernel(copyKernel, 3, NULL, workDim, NULL);
     }
-
-    Queue_.finish();
 }

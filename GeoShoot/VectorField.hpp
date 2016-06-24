@@ -9,6 +9,7 @@
 #ifndef VECTOR_FIELD_HPP
 #define VECTOR_FIELD_HPP
 
+#include "GPUVectorField.hpp"
 #include <vector>
 #include <array>
 
@@ -162,6 +163,19 @@ void VectorField<Dim>::Write(const std::array<const char *, Dim> & paths) const 
         dir.Image2World_ = Image2World_;
         dir.Write({ paths[dim] });
     }
+}
+
+template<size_t Dim>
+inline GPUVectorField<Dim> CopyOnDevice(const VectorField<Dim> & field,
+                                        compute::command_queue & queue) {
+    GPUVectorField<Dim> deviceField;
+    deviceField.NX = field.NX();
+    deviceField.NY = field.NY();
+    deviceField.NZ = field.NZ();
+    deviceField.NT = field.NT();
+    deviceField.field = compute::vector<float>(field.FlatSize(), queue.get_context());
+    compute::copy(field.Begin(), field.End(), deviceField.field.begin(), queue);
+    return deviceField;
 }
 
 #endif
