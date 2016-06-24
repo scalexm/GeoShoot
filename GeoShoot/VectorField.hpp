@@ -15,6 +15,9 @@
 template<size_t Dim>
 class VectorField {
 private:
+    template<size_t OtherDim>
+    friend class VectorField;
+
     int NX_ = 0, NY_ = 0, NZ_ = 0, NT_ = 0;
     int NXtY_ = 0, NXtYtZ_ = 0, NXtYtZtT_ = 0;
     std::array<std::array<float, 4>, 4> Image2World_, World2Image_;
@@ -42,6 +45,10 @@ public:
     static VectorField CreateVoidField(int NX, int NY, int NZ, int NT, float cst = 0);
     static VectorField Read(const std::array<const char *, Dim> & paths);
 
+    size_t FlatSize() const {
+        return VecField_.size();
+    }
+
     // emplace a vector at point (x, y, z)
     void P(std::array<float, Dim> values, int x, int y, int z = 0, int t = 0) {
         auto index = Index0(x, y, z, t);
@@ -63,6 +70,7 @@ public:
         return VecField_[Index<Direction>(x, y, z, t)];
     }
 
+    // set all voxels to value given by cst
     float Fill(float cst, int t = 0) {
         for (auto dir = 0; dir < Dim; ++dir) {
             for (auto index = 0; index < NXtYtZ_; ++index)
@@ -98,10 +106,10 @@ template<size_t Dim>
 VectorField<Dim> VectorField<Dim>::CreateVoidField(int NX, int NY, int NZ, int NT, float cst) {
     VectorField field { NX, NY, NZ, NT };
     std::fill(field.Begin(), field.End(), cst);
-    memset(&field.Image2World_[0], 16 * sizeof(float), 0);
+    memset(&field.Image2World_[0], 0, 16 * sizeof(float));
     field.Image2World_[0][0] = field.Image2World_[1][1] = field.Image2World_[2][2]
         = field.Image2World_[3][3] = 1;
-    memcpy(&field.World2Image_[0], &field.Image2World_[0], 16 * sizeof(float));
+    field.World2Image_ = field.Image2World_;
     return field;
 }
 
@@ -113,35 +121,32 @@ ScalarField ScalarField::Read(const std::array<const char *, 1> & path);
 template<>
 void ScalarField::Write(const std::array<const char *, 1> & path) const;
 
+/* not perfect regarding memory efficiency, should be rewritten if needed */
 template<size_t Dim>
 VectorField<Dim> VectorField<Dim>::Read(const std::array<const char *, Dim> & paths) {
-    std::array<ScalarField, Dim> directions;
+    VectorField<Dim> field;
+
     for (auto dim = 0; dim < Dim; ++dim) {
-        directions[dim] = ScalarField::Read({ paths[0] });
+        auto dir = ScalarField::Read({ paths[dim] });
+
         if (dim != 0) {
-            auto eq_x = directions[dim].NX() == directions[dim - 1].NX();
-            auto eq_y = directions[dim].NY() == directions[dim - 1].NY();
-            auto eq_z = directions[dim].NZ() == directions[dim - 1].NZ();
-            auto eq_t = directions[dim].NT() == directions[dim - 1].NT();
+            auto eq_x = dir.NX() == field.NX();
+            auto eq_y = dir.NY() == field.NY();
+            auto eq_z = dir.NZ() == field.NZ();
+            auto eq_t = dir.NT() == field.NT();
             if (!eq_x || !eq_y || !eq_z || !eq_t)
                 throw std::invalid_argument { "directions do not have the same lengths" };
         }
+
+        if (dim == 0) {
+            field = VectorField<Dim> { dir.NX(), dir.NY(), dir.NZ(), dir.NT() };
+            field.Image2World_ = std::move(dir.Image2World_);
+            field.World2Image_ = std::move(dir.World2Image_);
+        }
+
+        std::copy(dir.Begin(), dir.End(), &field.VecField_[dim * field.NXtYtZtT_]);
     }
 
-    VectorField<Dim> field {
-        directions[0].NX(), directions[0].NY(), directions[0].NZ(), directions[0].NT()
-    };
-
-    for (auto dim = 0; dim < Dim; ++dim) {
-        std::copy(
-            directions[dim].Begin(),
-            directions[dim].End(),
-            &field.VecField_[dim * field.NXtYtZtT_]
-        );
-    }
-
-    field.Image2World_ = std::move(directions[0].Image2World_);
-    field.World2Image_ = std::move(directions[0].World2Image_);
     return field;
 }
 
@@ -154,7 +159,8 @@ void VectorField<Dim>::Write(const std::array<const char *, Dim> & paths) const 
             &VecField_[dim * NXtYtZtT_] + NXtYtZtT_,
             dir.Begin()
         );
-        dir.Write(paths[dim]);
+        dir.Image2World_ = Image2World_;
+        dir.Write({ paths[dim] });
     }
 }
 

@@ -9,6 +9,7 @@
 #ifndef GPU_HPP
 #define GPU_HPP
 
+#define BOOST_COMPUTE_DEBUG_KERNEL_COMPILATION
 #include <boost/compute.hpp>
 
 namespace compute = boost::compute;
@@ -16,5 +17,15 @@ namespace compute = boost::compute;
 compute::context & GetContext();
 compute::device & GetDevice();
 void SetDevice(const compute::device &);
+
+#define MAKE_PROGRAM(source, context) \
+    static compute::program prog; \
+    static bool built = false; \
+    if (!built) { \
+        prog = compute::program::create_with_source(source, context); \
+        prog.build(); \
+        built = true; \
+    } \
+    return prog;
 
 #endif

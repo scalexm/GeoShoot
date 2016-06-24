@@ -7,16 +7,21 @@
 //
 
 #include <iostream>
+#include <chrono>
+#include <clFFT/clFFT.h>
 #include "../GeoShoot/VectorField.hpp"
 #include "../GeoShoot/GPU.hpp"
+#include "../GeoShoot/FFTConvolver.hpp"
 
-int main(int argc, char *argv[])
-{
+void Run(int argc, char ** argv) {
     SetDevice(compute::system::default_device());
     std::cout << "OpenCL will use " << GetDevice().name() << std::endl;
-    /*auto f = ScalarField::Read({ "/Users/alexm/Desktop/utilzreg-code/DATA/S02.Iso1mm.nii" });
-    std::cout << f.NX() << "," << f.NY() << "," << f.NZ() << std::endl;
-    f.Write({ "/Users/alexm/Desktop/lol.nii" });*/
+}
 
+int main(int argc, char ** argv) {
+    clfftSetupData data;
+    clfftSetup(&data);
+    Run(argc, argv);
+    clfftTeardown();
     return 0;
 }
