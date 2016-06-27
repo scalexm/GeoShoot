@@ -18,17 +18,12 @@ struct GPUVectorField {
     compute::vector<float> field;
     int NX, NY, NZ, NT;
 
-    static GPUVectorField Create(int NX, int NY, int NZ, int NT, const compute::context & ctx) {
-        GPUVectorField<Dim> field;
-        field.NX = NX;
-        field.NY = NY;
-        field.NZ = NZ;
-        field.NT = NT;
-        field.field = compute::vector<float>(Dim * NX * NY * NZ * NT, ctx);
-        return field;
+    GPUVectorField() = default;
+
+    GPUVectorField(int NX, int NY, int NZ, int NT, const compute::context & ctx)
+        : NX { NX }, NY { NY }, NZ { NZ }, NT { NT }, field(Dim * NX * NY * NZ * NT, ctx) {
     }
 
-    GPUVectorField() = default;
     GPUVectorField(const GPUVectorField &) = delete;
     GPUVectorField(GPUVectorField &&) = default;
     GPUVectorField & operator =(const GPUVectorField &) = delete;

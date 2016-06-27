@@ -34,16 +34,21 @@ private:
         return Direction * NXtYtZtT_ + Index0(x, y, z, t);
     }
 
-    VectorField(int NX, int NY, int NZ, int NT) : NX_ { NX }, NY_ { NY }, NZ_ { NZ }, NT_ { NT },
-                                                  NXtY_ { NX * NY }, NXtYtZ_ { NX * NY * NZ },
-                                                  NXtYtZtT_ { NX * NY * NZ * NT },
-                                                  VecField_(Dim * NXtYtZtT_) { }
 public:
     using Iterator = std::vector<float>::iterator;
     using ConstIterator = std::vector<float>::const_iterator;
 
     VectorField() = default;
-    static VectorField CreateVoidField(int NX, int NY, int NZ, int NT, float cst = 0);
+
+    VectorField(int NX, int NY, int NZ, int NT) : NX_ { NX }, NY_ { NY }, NZ_ { NZ }, NT_ { NT },
+                                                  NXtY_ { NX * NY }, NXtYtZ_ { NX * NY * NZ },
+                                                  NXtYtZtT_ { NX * NY * NZ * NT },
+                                                  VecField_(Dim * NXtYtZtT_) {
+        memset(&Image2World_[0], 0, 16 * sizeof(float));
+        Image2World_[0][0] = Image2World_[1][1] = Image2World_[2][2] = Image2World_[3][3] = 1;
+        World2Image_ = Image2World_;
+    }
+
     static VectorField Read(const std::array<const char *, Dim> & paths);
 
     size_t FlatSize() const {
@@ -51,14 +56,14 @@ public:
     }
 
     // emplace a vector at point (x, y, z)
-    void P(std::array<float, Dim> values, int x, int y, int z = 0, int t = 0) {
+    void P(std::array<float, Dim> values, int x, int y, int z, int t = 0) {
         auto index = Index0(x, y, z, t);
         for (auto dir = 0; dir < Dim; ++dir)
             VecField_[dir * NXtYtZtT_ + index] = values[dir];
     }
 
     // add a vector at point (x, y, z)
-    void Add(std::array<float, Dim> values, int x, int y, int z = 0, int t = 0) {
+    void Add(std::array<float, Dim> values, int x, int y, int z, int t = 0) {
         auto index = Index0(x, y, z, t);
         for (auto dir = 0; dir < Dim; ++dir)
             VecField_[dir * NXtYtZtT_ + index] += values[dir];
@@ -66,7 +71,7 @@ public:
 
     // get value at point (x, y, z) and at direction Direction
     template<size_t Direction>
-    float G(int x, int y, int z = 0, int t = 0) const {
+    float G(int x, int y, int z, int t = 0) const {
         static_assert(Direction < Dim, "Direction should be less than Dim");
         return VecField_[Index<Direction>(x, y, z, t)];
     }
@@ -102,17 +107,6 @@ public:
 
     void Write(const std::array<const char *, Dim> & paths) const;
 };
-
-template<size_t Dim>
-VectorField<Dim> VectorField<Dim>::CreateVoidField(int NX, int NY, int NZ, int NT, float cst) {
-    VectorField field { NX, NY, NZ, NT };
-    std::fill(field.Begin(), field.End(), cst);
-    memset(&field.Image2World_[0], 0, 16 * sizeof(float));
-    field.Image2World_[0][0] = field.Image2World_[1][1] = field.Image2World_[2][2]
-        = field.Image2World_[3][3] = 1;
-    field.World2Image_ = field.Image2World_;
-    return field;
-}
 
 using ScalarField = VectorField<1>;
 
@@ -168,14 +162,28 @@ void VectorField<Dim>::Write(const std::array<const char *, Dim> & paths) const 
 template<size_t Dim>
 inline GPUVectorField<Dim> CopyOnDevice(const VectorField<Dim> & field,
                                         compute::command_queue & queue) {
-    GPUVectorField<Dim> deviceField;
-    deviceField.NX = field.NX();
-    deviceField.NY = field.NY();
-    deviceField.NZ = field.NZ();
-    deviceField.NT = field.NT();
-    deviceField.field = compute::vector<float>(field.FlatSize(), queue.get_context());
+    GPUVectorField<Dim> deviceField {
+        field.NX(),
+        field.NY(),
+        field.NZ(),
+        field.NT(),
+        queue.get_context()
+    };
     compute::copy(field.Begin(), field.End(), deviceField.field.begin(), queue);
     return deviceField;
+}
+
+template<size_t Dim>
+inline VectorField<Dim> CopyOnHost(const GPUVectorField<Dim> & field,
+                                   compute::command_queue & queue) {
+    VectorField<Dim> hostField {
+        field.NX,
+        field.NY,
+        field.NZ,
+        field.NT,
+    };
+    compute::copy(field.field.begin(), field.field.end(), hostField.Begin(), queue);
+    return hostField;
 }
 
 #endif

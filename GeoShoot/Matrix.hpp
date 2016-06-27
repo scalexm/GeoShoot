@@ -16,4 +16,7 @@ using Matrix = std::array<std::array<float, Col>, Row>;
 
 Matrix<4, 4> Invert4t4Quaternion(const Matrix<4, 4> &);
 
+void TridiagonalSolveFloat(const float * a, const float * b, float * c, float * d,
+                           float *x, int n);
+
 #endif

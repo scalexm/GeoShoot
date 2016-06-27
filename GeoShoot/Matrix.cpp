@@ -47,3 +47,26 @@ Matrix<4, 4> Invert4t4Quaternion(const Matrix<4, 4> & q1) {
     q2[3][3] = (deti == 0.0) ? 0.0 : 1.0 ; /* failure flag if deti == 0 */
     return q2;
 }
+
+/// Solve the problem: MX=D where D is a known vector, M a tridiagonal matrix and X the unknown vector.
+/// Inputs are a,b,c,d,n where M(i,i)=b(i), M(i,i-1)=a(i), M(i,i+1)=c(i), D(i)=d(i), D in R^n and M in R^n*R^n.
+/// Output is X where X in R^n.  Warning: will modify c and d! */
+void TridiagonalSolveFloat(const float * a, const float * b, float * c, float * d,
+                           float *x, int n) {
+    int i;
+    double id;
+
+    /* Modify the coefficients. */
+    c[0] /= b[0];                       /* Division by zero risk. */
+    d[0] /= b[0];                       /* Division by zero would imply a singular matrix. */
+    for (i = 1; i < n; i++) {
+        id = (b[i] - c[i-1] * a[i]);      /* Division by zero risk. */
+        c[i] /= id;                       /* Last value calculated is redundant. */
+        d[i] = (d[i] - d[i-1] * a[i]) / id;
+    }
+
+    /* Now back substitute. */
+    x[n - 1] = d[n - 1];
+    for (i = n - 2; i >= 0; i--)
+        x[i] = d[i] - c[i] * x[i + 1];
+}
