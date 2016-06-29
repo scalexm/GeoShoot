@@ -26,9 +26,6 @@ void FFTConvolver::InitiateConvolver(
     const std::array<float, 7> & sigmaYs,
     const std::array<float, 7> & sigmaZs
 ) {
-    NX_ = NX;
-    NY_ = NY;
-    NZ_ = NZ;
 
     //smaller size higher than 'this->NX' and being a power of 2
     NXfft_ = (int)(pow(2., floor(log(NX) / log(2.) + 0.99999)) + 0.00001);
@@ -175,15 +172,15 @@ namespace {
     compute::program & CopyKernel() {
         static std::string source = R"#(
             __kernel void copy(__global float * out, __global const float * in,
-                               int NX_out, int NXtY_out, int NXtYtZtT_out,
-                               int NX_in, int NXtY_in, int NXtYtZtT_in,
+                               int NX_out, int NXtY_out, int NXtYtZ_out,
+                               int NX_in, int NXtY_in, int NXtYtZ_in,
                                int dirOut, int dirIn,
                                int strideOut, int strideIn) {
                 int x = get_global_id(0);
                 int y = get_global_id(1);
                 int z = get_global_id(2);
-                int indOut = x + y * NX_out + z * NXtY_out + dirOut * NXtYtZtT_out;
-                int indIn = x + y * NX_in + z * NXtY_in + dirIn * NXtYtZtT_in;
+                int indOut = x + y * NX_out + z * NXtY_out + dirOut * NXtYtZ_out;
+                int indIn = x + y * NX_in + z * NXtY_in + dirIn * NXtYtZ_in;
                 out[strideOut * indOut] = in[strideIn * indIn];
             }
         )#";
@@ -209,11 +206,15 @@ namespace {
     }
 }
 
-void FFTConvolver::Convolution(compute::vector<float> & field, int NT) {
+void FFTConvolver::Convolution(GPUVectorField<3> & field) {
+    assert(field.NX() <= NXfft_);
+    assert(field.NY() <= NYfft_);
+    assert(field.NZ() <= NZfft_);
+
     // copy between field and Signal_ (a signal which will be processed by clFFT), complying
     // with clFFT complex interleaved layout
     auto copyKernel = CopyKernel().create_kernel("copy");
-    size_t workDim[3] = { (size_t) NX_, (size_t) NY_, (size_t) NZ_ };
+    size_t workDim[3] = { (size_t) field.NX(), (size_t) field.NY(), (size_t) field.NZ() };
 
     auto filterKernel = FilterKernel().create_kernel("filter");
     size_t filterWorkDim[1] = { (size_t) NXfft_ * NYfft_ * NZfft_ };
@@ -225,13 +226,13 @@ void FFTConvolver::Convolution(compute::vector<float> & field, int NT) {
         compute::fill(Signal_.begin(), Signal_.end(), 0.f, Queue_);
         // copy <field | e_dir> to signal
         copyKernel.set_arg(0, Signal_);
-        copyKernel.set_arg(1, field);
+        copyKernel.set_arg(1, field.Buffer());
         copyKernel.set_arg(2, NXfft_);
         copyKernel.set_arg(3, NXfft_ * NYfft_);
         copyKernel.set_arg(4, 0);
-        copyKernel.set_arg(5, NX_);
-        copyKernel.set_arg(6, NX_ * NY_);
-        copyKernel.set_arg(7, NX_ * NY_ * NZ_ * NT);
+        copyKernel.set_arg(5, field.NX());
+        copyKernel.set_arg(6, field.NY() * field.NZ());
+        copyKernel.set_arg(7, field.NZ() * field.NY() * field.NZ());
         copyKernel.set_arg(8, 0);
         copyKernel.set_arg(9, dir);
         copyKernel.set_arg(10, 2);
@@ -272,11 +273,11 @@ void FFTConvolver::Convolution(compute::vector<float> & field, int NT) {
         CHECK_ERROR(err);
 
         // copy back signal to <field | e_dir>
-        copyKernel.set_arg(0, field);
+        copyKernel.set_arg(0, field.Buffer());
         copyKernel.set_arg(1, Signal_);
-        copyKernel.set_arg(2, NX_);
-        copyKernel.set_arg(3, NX_ * NY_);
-        copyKernel.set_arg(4, NX_ * NY_ * NZ_ * NT);
+        copyKernel.set_arg(2, field.NX());
+        copyKernel.set_arg(3, field.NX() * field.NY());
+        copyKernel.set_arg(4, field.NX() * field.NY() * field.NZ());
         copyKernel.set_arg(5, NXfft_);
         copyKernel.set_arg(6, NXfft_ * NYfft_);
         copyKernel.set_arg(7, 0);

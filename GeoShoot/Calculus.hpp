@@ -9,13 +9,21 @@
 #ifndef CALCULUS_HPP
 #define CALCULUS_HPP
 
-#include "GPUVectorField.hpp"
+#include "VectorField.hpp"
 
 void CptGradScalarField(const GPUScalarField & field, GPUVectorField<3> & gradient,
-                        compute::command_queue & queue,
-                        int timeFrame = -1, float deltaX = 0.f);
+                        float deltaX, compute::command_queue & queue);
 
-void ApplyMapping(const GPUScalarField & src, const GPUVectorField<3> & mapping,
-                  GPUScalarField & dst, compute::command_queue & queue, int t = 0);
+void TransportImage(const GPUScalarField & src, const GPUVectorField<3> & diffeo,
+                    GPUScalarField & dst, compute::command_queue & queue);
+
+void TransportMomentum(const GPUScalarField & src, const GPUVectorField<3> & diffeo,
+                       GPUScalarField & dst, float deltaX, compute::command_queue & queue);
+
+void UpdateDiffeo(const GPUVectorField<3> & velocity, GPUVectorField<3> & diffeo, float deltaT,
+                  compute::command_queue & queue);
+
+void UpdateInvDiffeo(const GPUVectorField<3> & velocity, GPUVectorField<3> & diffeo, float deltaT,
+                     float deltaX, compute::command_queue & queue);
 
 #endif

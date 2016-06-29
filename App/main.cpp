@@ -9,10 +9,8 @@
 #include <iostream>
 #include <chrono>
 #include <clFFT/clFFT.h>
-#include "../GeoShoot/VectorField.hpp"
 #include "../GeoShoot/GPU.hpp"
 #include "../GeoShoot/GeoShoot.hpp"
-#include "../GeoShoot/Matrix.hpp"
 
 void Run(int argc, char ** argv) {
     SetDevice(compute::system::default_device());
@@ -21,22 +19,12 @@ void Run(int argc, char ** argv) {
 
     auto image = ScalarField::Read({"/Users/alexm/Desktop/image.nii"});
     auto momentum = ScalarField::Read({"/Users/alexm/Desktop/momentum.nii"});
-    GeoShoot gs { CopyOnDevice(image, queue), CopyOnDevice(momentum, queue), queue };
-    gs.Shoot(10);
+    GeoShoot gs { std::move(image), std::move(momentum), 10, queue };
+    gs.Shoot();
     queue.finish();
 }
 
 int main(int argc, char ** argv) {
-    /*float A[3] = { 0, 2, 3 };
-    float B[3] = { 1, 1, 1 };
-    float C[3] = { 4, 5, 0 };
-    float D[3] = { 1, 1, 1 };
-    float X[3];
-    TridiagonalSolveFloat(A, B, C, D, X, 3);
-    for (auto && x : X)
-        std::cout << x << std::endl;
-    return 0;*/
-
     clfftSetupData data;
     clfftSetup(&data);
     Run(argc, argv);

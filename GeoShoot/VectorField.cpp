@@ -20,10 +20,13 @@ namespace {
     template<class DataType>
     void FillFromFile(ScalarField & field, const nifti_1_header & hdr, std::ifstream & file) {
         DataType data;
-        for (auto t = 0; t < field.NT(); ++t) for (auto z = 0; z < field.NZ(); ++z)
-        for (auto y = 0; y < field.NY(); ++y) for (auto x = 0; x < field.NX(); ++x) {
-            file.read((char*)&data, sizeof(DataType));
-            field.P({ (float)data * hdr.scl_slope + hdr.scl_inter }, x, y, z, t);
+        for (auto z = 0; z < field.NZ(); ++z) {
+            for (auto y = 0; y < field.NY(); ++y) {
+                for (auto x = 0; x < field.NX(); ++x) {
+                    file.read((char*)&data, sizeof(DataType));
+                    field.P({ (float)data * hdr.scl_slope + hdr.scl_inter }, x, y, z);
+                }
+            }
         }
     }
 }
@@ -37,14 +40,8 @@ ScalarField ScalarField::Read(const std::array<const char *, 1> & path) {
         throw std::invalid_argument { "bad file" };
 
     file.read((char *)&hdr, MIN_HEADER_SIZE);
-    if (hdr.dim[4] == 1 && hdr.dim[5] > 1) {
-        hdr.dim[4] = hdr.dim[5];
-        hdr.dim[5] = 1;
-    }
-    else if (hdr.dim[4] < 1)
-        hdr.dim[4] = 1;
 
-    ScalarField field { hdr.dim[1], hdr.dim[2], hdr.dim[3], hdr.dim[4] };
+    ScalarField field { hdr.dim[1], hdr.dim[2], hdr.dim[3] };
     if (hdr.sform_code > 0) {
         std::copy(&hdr.srow_x[0], &hdr.srow_x[0] + 4, field.Image2World_[0].begin());
         std::copy(&hdr.srow_y[0], &hdr.srow_y[0] + 4, field.Image2World_[1].begin());
@@ -157,7 +154,7 @@ void ScalarField::Write(const std::array<const char *, 1> & path) const {
     hdr.dim[1] = NX_;
     hdr.dim[2] = NY_;
     hdr.dim[3] = NZ_;
-    hdr.dim[4] = NT_;
+    hdr.dim[4] = 1;
     hdr.datatype = NIFTI_TYPE_FLOAT32;
     hdr.bitpix = 32; 
     hdr.qform_code = 0; // should ideally be set to 1 but I don't set the values of 'quatern_b', 'quatern_c' and 'quatern_d'
