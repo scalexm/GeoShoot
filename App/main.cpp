@@ -19,8 +19,8 @@ void Run(int argc, char ** argv) {
 
     auto image = ScalarField::Read({"/Users/alexm/Desktop/image.nii"});
     auto momentum = ScalarField::Read({"/Users/alexm/Desktop/momentum.nii"});
-    GeoShoot gs { std::move(image), std::move(momentum), 10, queue };
-    gs.Shoot();
+    //GeoShoot gs { std::move(image), std::move(momentum), 10, queue };
+    //gs.Shoot();
     queue.finish();
 }
 

@@ -15,7 +15,7 @@ class GeoShoot {
 private:
     std::vector<VectorField<3>> DiffeoTimeLine_, InvDiffeoTimeLine_;
 
-    ScalarField Image_, Momentum_;
+    ScalarField Source_, Target_, Momentum_;
     compute::command_queue Queue_;
     FFTConvolver Convolver_;
     float DeltaX_ = 1.f, DeltaT_;
@@ -23,10 +23,29 @@ private:
     int N_;
     int NX_, NY_, NZ_;
 
+    GPUScalarField GPUSource_, GPUTarget_, GPUInitialMomentum_, GPUGradientMomentum_;
+
+    GPUVectorField<3> Accumulator1_, Accumulator2_;
+    GPUScalarField ScalarAccumulator1_, ScalarAccumulator2_;
+
     GPUVectorField<3> TempImageGrad_, TempVelocity_, TempDiffeo_, TempInvDiffeo_;
-    GPUScalarField TempInitialImage_, TempImage_, TempInitialMomentum_, TempMomentum_;
+    GPUScalarField TempImage_, TempMomentum_;
+
+    GPUVectorField<3> TempAdMomentumGrad_;
+    GPUScalarField TempAdMomentum_, TempAdImage_;
+
+    template<class T>
+    void Allocate(T & field) {
+        field = T { NX_, NY_, NZ_, Queue_.get_context() };
+    }
+
+    template<class T>
+    void Deallocate(T & field) {
+        field = T { };
+    }
 public:
-    GeoShoot(ScalarField Image, ScalarField Momentum, int N, compute::command_queue queue);
+    GeoShoot(ScalarField Source, ScalarField Target, ScalarField Momentum, int N,
+             compute::command_queue queue);
     void Shoot();
     void ComputeGradient();
 };

@@ -8,6 +8,7 @@
 
 #include "Calculus.hpp"
 #include "GPU.hpp"
+#include <tuple>
 
 namespace {
     compute::program & GradientKernel() {
@@ -40,8 +41,8 @@ namespace {
     }
 }
 
-void CptGradScalarField(const GPUScalarField & field, GPUVectorField<3> & gradient,
-                        float deltaX, compute::command_queue & queue) {
+void ComputeGradScalarField(const GPUScalarField & field, GPUVectorField<3> & gradient,
+                            float deltaX, compute::command_queue & queue) {
     assert(field.NX() == gradient.NX());
     assert(field.NY() == gradient.NY());
     assert(field.NZ() == gradient.NZ());
@@ -326,20 +327,23 @@ void UpdateDiffeo(const GPUVectorField<3> & velocity, GPUVectorField<3> & diffeo
     queue.enqueue_nd_range_kernel(kernel, 3, NULL, workDim, NULL);
 }
 
-void UpdateInvDiffeo(const GPUVectorField<3> & velocity, GPUVectorField<3> & diffeo, float deltaT,
-                     float deltaX, compute::command_queue & queue) {
+void UpdateInvDiffeo(const GPUVectorField<3> & velocity, GPUVectorField<3> & diffeo,
+                     GPUVectorField<3> & accumulator, float deltaT, float deltaX,
+                     compute::command_queue & queue) {
     assert(velocity.NX() == diffeo.NX());
     assert(velocity.NY() == diffeo.NY());
     assert(velocity.NZ() == diffeo.NZ());
+    assert(accumulator.NX() == diffeo.NX());
+    assert(accumulator.NY() == diffeo.NY());
+    assert(accumulator.NZ() == diffeo.NZ());
 
-    auto temp = GPUVectorField<3> { diffeo.NX(), diffeo.NY(), diffeo.NZ(), queue.get_context() };
-    compute::copy(diffeo.Begin(), diffeo.End(), temp.Begin(), queue);
+    compute::copy(diffeo.Begin(), diffeo.End(), accumulator.Begin(), queue);
 
     auto kernel = UpdateInvDiffeoKernel().create_kernel("updateInvDiffeo");
     size_t workDim[3] = { (size_t) diffeo.NX(), (size_t) diffeo.NY(), (size_t) diffeo.NZ() };
     kernel.set_arg(0, diffeo.Buffer());
     kernel.set_arg(1, velocity.Buffer());
-    kernel.set_arg(2, temp.Buffer());
+    kernel.set_arg(2, accumulator.Buffer());
     kernel.set_arg(3, diffeo.NX());
     kernel.set_arg(4, diffeo.NY());
     kernel.set_arg(5, diffeo.NZ());
@@ -347,4 +351,89 @@ void UpdateInvDiffeo(const GPUVectorField<3> & velocity, GPUVectorField<3> & dif
     kernel.set_arg(7, deltaX);
 
     queue.enqueue_nd_range_kernel(kernel, 3, NULL, workDim, NULL);
+}
+
+namespace {
+    compute::program & STimesV_Kernel() {
+        static std::string source = R"#(
+            __kernel void stimesv(__global float * dst, __global const float * scalar,
+                                  __global const float * vec, int NX, int NXtY, int NXtYtZ,
+                                  float factor) {
+                int x = get_global_id(0);
+                int y = get_global_id(1);
+                int z = get_global_id(2);
+                int ind = x + y * NX + z * NXtY;
+
+                dst[ind] = factor * scalar[ind] * vec[ind];
+                dst[ind + NXtYtZ] = factor * scalar[ind] * vec[ind + NXtYtZ];
+                dst[ind + 2 * NXtYtZ] = factor * scalar[ind] * vec[ind + 2 * NXtYtZ];
+            }
+        )#";
+
+        MAKE_PROGRAM(source, GetContext());
+    }
+}
+
+void ScalarFieldTimesVectorField(const GPUScalarField & src1, const GPUVectorField<3> & src2,
+                                 GPUVectorField<3> & dst, float factor,
+                                 compute::command_queue & queue) {
+    assert(src1.NX() == src2.NX());
+    assert(src1.NY() == src2.NY());
+    assert(src1.NZ() == src2.NZ());
+    assert(src1.NX() == dst.NX());
+    assert(src1.NY() == dst.NY());
+    assert(src1.NZ() == dst.NZ());
+
+    auto kernel = STimesV_Kernel().create_kernel("stimesv");
+    size_t workDim[3] = { (size_t) src1.NX(), (size_t) src1.NX(), (size_t) src1.NZ() };
+    kernel.set_arg(0, dst.Buffer());
+    kernel.set_arg(1, src1.Buffer());
+    kernel.set_arg(2, src2.Buffer());
+    kernel.set_arg(3, src1.NX());
+    kernel.set_arg(4, src1.NX() * src1.NY());
+    kernel.set_arg(5, src1.NX() * src1.NY() * src1.NZ());
+    kernel.set_arg(6, factor);
+}
+
+namespace {
+    compute::program & ScalarProductKernel() {
+        static std::string source = R"#(
+            __kernel void scalarProduct(__global float * dst, __global const float * src1,
+                                        __global const float * src2,
+                                        int NX, int NXtY, int NXtYtZ) {
+                int x = get_global_id(0);
+                int y = get_global_id(1);
+                int z = get_global_id(2);
+                int ind = x + y * NX + z * NXtY;
+
+                dst[ind] = src1[ind] * src2[ind];
+                ind += NXtYtZ;
+                dst[ind] += src1[ind] * src2[ind];
+                ind += NXtYtZ;
+                dst[ind] += src1[ind] * src2[ind];
+            }
+        )#";
+
+        MAKE_PROGRAM(source, GetContext());
+    }
+
+}
+
+void ScalarProduct(const GPUVectorField<3> & src1, const GPUVectorField<3> & src2,
+                   GPUScalarField & dst, compute::command_queue & queue) {
+    assert(src1.NX() == src2.NX());
+    assert(src1.NY() == src2.NY());
+    assert(src1.NZ() == src2.NZ());
+    assert(src1.NX() == dst.NX());
+    assert(src1.NY() == dst.NY());
+    assert(src1.NZ() == dst.NZ());
+
+    auto kernel = ScalarProductKernel().create_kernel("scalarProduct");
+    size_t workDim[3] = { (size_t) src1.NX(), (size_t) src1.NX(), (size_t) src1.NZ() };
+    kernel.set_arg(0, dst.Buffer());
+    kernel.set_arg(1, src1.Buffer());
+    kernel.set_arg(2, src2.Buffer());
+    kernel.set_arg(3, src1.NX());
+    kernel.set_arg(4, src1.NX() * src1.NY());
+    kernel.set_arg(5, src1.NX() * src1.NY() * src1.NZ());
 }

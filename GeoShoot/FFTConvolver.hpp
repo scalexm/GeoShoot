@@ -53,6 +53,7 @@ public:
         const std::array<float, 7> & sigmaZs = { 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f }
     );
 
+    // in place convolution
     void Convolution(GPUVectorField<3> & field);
 };
 
