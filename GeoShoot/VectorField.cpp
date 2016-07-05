@@ -156,7 +156,7 @@ void ScalarField::Write(const std::array<const char *, 1> & path) const {
     hdr.dim[3] = NZ_;
     hdr.dim[4] = 1;
     hdr.datatype = NIFTI_TYPE_FLOAT32;
-    hdr.bitpix = 32; 
+    hdr.bitpix = 32;
     hdr.qform_code = 0; // should ideally be set to 1 but I don't set the values of 'quatern_b', 'quatern_c' and 'quatern_d'
     hdr.pixdim[1] = sqrt(
         Image2World_[0][0] * Image2World_[0][0] +

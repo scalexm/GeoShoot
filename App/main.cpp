@@ -18,9 +18,11 @@ void Run(int argc, char ** argv) {
     compute::command_queue queue { GetContext(), GetDevice() };
 
     auto image = ScalarField::Read({"/Users/alexm/Desktop/image.nii"});
-    auto momentum = ScalarField::Read({"/Users/alexm/Desktop/momentum.nii"});
-    //GeoShoot gs { std::move(image), std::move(momentum), 10, queue };
-    //gs.Shoot();
+    auto target = ScalarField::Read({"/Users/alexm/Desktop/target.nii"});
+    auto momentum = ScalarField { image.NX(), image.NY(), image.NZ() };
+    momentum.Fill(0.f);
+    GeoShoot gs { std::move(image), std::move(target), std::move(momentum), 10, queue };
+    gs.Run(20);
     queue.finish();
 }
 

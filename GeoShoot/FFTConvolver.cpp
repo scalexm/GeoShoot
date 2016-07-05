@@ -32,8 +32,8 @@ void FFTConvolver::InitiateConvolver(
     NYfft_ = (int)(pow(2., floor(log(NY) / log(2.) + 0.99999)) + 0.00001);
     NZfft_ = (int)(pow(2., floor(log(NZ) / log(2.) + 0.99999)) + 0.00001);
 
-    Filter_ = compute::vector<float>(2 * NXfft_  * NYfft_ * NZfft_, GetContext());
-    Signal_ = compute::vector<float>(2 * NXfft_  * NYfft_ * NZfft_, GetContext());
+    Filter_ = compute::vector<float>(2 * NXfft_  * NYfft_ * NZfft_, Queue_.get_context());
+    Signal_ = compute::vector<float>(2 * NXfft_  * NYfft_ * NZfft_, Queue_.get_context());
 
     if (PlanHandle_)
         clfftDestroyPlan(&PlanHandle_);
@@ -41,7 +41,7 @@ void FFTConvolver::InitiateConvolver(
     clfftDim dim = CLFFT_3D;
     size_t clLengths[3] = { (size_t) NXfft_, (size_t) NYfft_, (size_t) NZfft_ };
 
-    auto err = clfftCreateDefaultPlan(&PlanHandle_, GetContext(), dim, clLengths);
+    auto err = clfftCreateDefaultPlan(&PlanHandle_, Queue_.get_context(), dim, clLengths);
     CHECK_ERROR(err);
     err = clfftSetPlanPrecision(PlanHandle_, CLFFT_SINGLE);
     CHECK_ERROR(err);
@@ -112,7 +112,7 @@ void FFTConvolver::MakeSumOf7AnisotropicGaussianFilters(
     bool normalizeWeights
 ) {
     assert(PlanHandle_ != 0);
-    compute::vector<float> temp(Filter_.size() / 2, GetContext());
+    compute::vector<float> temp(Filter_.size() / 2, Queue_.get_context());
     compute::fill(Filter_.begin(), Filter_.end(), 0.f, Queue_);
 
     auto gaussianKernel = GaussianKernel().create_kernel("gaussian");

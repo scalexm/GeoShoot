@@ -100,6 +100,26 @@ public:
         std::fill(Begin(), End(), cst);
     }
 
+    void Fill(float cst, compute::command_queue & queue) {
+        compute::fill(Begin(), End(), cst, queue);
+    }
+
+    float MaxAbsVal() const {
+        static_assert(std::is_same<DevicePolicy, CPUPolicy>::value, "only on CPU");
+        auto max = 0.f;
+        for (auto && x : VecField_) {
+            auto xa = fabs(x);
+            if (xa > max)
+                max = xa;
+        }
+        return max;
+    }
+
+    float MaxAbsVal(compute::command_queue & queue) const {
+        auto minmax = compute::minmax_element(Begin(), End(), compute::less<float>(), queue);
+        return std::max(fabs(*minmax.first), fabs(*minmax.second));
+    }
+
     int NX() const { return NX_; }
     int NY() const { return NY_; }
     int NZ() const { return NZ_; }

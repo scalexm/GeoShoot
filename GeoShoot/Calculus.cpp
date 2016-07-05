@@ -27,12 +27,37 @@ namespace {
                     grad[ind + NXtYtZ] = 0.f;
                     grad[ind + 2 * NXtYtZ] = 0.f;
                 } else {
-                    grad[ind]
-                        = (field[ind + 1] - field[ind - 1]) / (2.f * deltaX);
-                    grad[ind + NXtYtZ]
-                        = (field[ind + NX] - field[ind - NX]) / (2.f * deltaX);
-                    grad[ind + 2 * NXtYtZ]
-                        = (field[ind + NXtY] - field[ind - NXtY]) / (2.f * deltaX);
+                    float twoDelta = 2.f * deltaX;
+                    grad[ind] = (field[ind + 1] - field[ind - 1]) / twoDelta;
+                    grad[ind + NXtYtZ] = (field[ind + NX] - field[ind - NX]) / twoDelta;
+                    grad[ind + 2 * NXtYtZ] = (field[ind + NXtY] - field[ind - NXtY]) / twoDelta;
+                }
+            }
+        )#";
+
+        MAKE_PROGRAM(source, GetContext());
+    }
+
+    compute::program & DivKernel() {
+        static std::string source = R"#(
+            __kernel void div(__global float * div, __global const float * field,
+                              int NX, int NY, int NZ, float deltaX) {
+                int x = get_global_id(0);
+                int y = get_global_id(1);
+                int z = get_global_id(2);
+                int NXtY = NX * NY;
+                int NXtYtZ = NX * NY * NZ;
+                int ind = x + y * NX + z * NXtY;
+
+                if (x == 0 || y == 0 || z == 0 || x == NX - 1 || y == NY - 1 || z == NZ - 1) {
+                    div[ind] = 0.f;
+                } else {
+                    float twoDelta = 2.f * deltaX;
+                    div[ind] = (field[ind + 1] - field[ind - 1]) / twoDelta;
+                    int iind = ind + NXtYtZ;
+                    div[ind] += (field[iind + NX] - field[iind - NX]) / twoDelta;
+                    iind += NXtYtZ;
+                    div[ind] += (field[iind + NXtY] - field[iind - NXtY]) / twoDelta;
                 }
             }
         )#";
@@ -50,6 +75,24 @@ void ComputeGradScalarField(const GPUScalarField & field, GPUVectorField<3> & gr
     auto kernel = GradientKernel().create_kernel("gradient");
     size_t workDim[3] = { (size_t) field.NX(), (size_t) field.NY(), (size_t) field.NZ() };
     kernel.set_arg(0, gradient.Buffer());
+    kernel.set_arg(1, field.Buffer());
+    kernel.set_arg(2, field.NX());
+    kernel.set_arg(3, field.NY());
+    kernel.set_arg(4, field.NZ());
+    kernel.set_arg(5, deltaX);
+
+    queue.enqueue_nd_range_kernel(kernel, 3, NULL, workDim, NULL);
+}
+
+void ComputeDivVectorField(const GPUVectorField<3> & field, GPUScalarField & div,
+                           float deltaX, compute::command_queue & queue) {
+    assert(field.NX() == div.NX());
+    assert(field.NY() == div.NY());
+    assert(field.NZ() == div.NZ());
+
+    auto kernel = DivKernel().create_kernel("div");
+    size_t workDim[3] = { (size_t) field.NX(), (size_t) field.NY(), (size_t) field.NZ() };
+    kernel.set_arg(0, div.Buffer());
     kernel.set_arg(1, field.Buffer());
     kernel.set_arg(2, field.NX());
     kernel.set_arg(3, field.NY());
@@ -290,13 +333,13 @@ namespace {
                         float val = 0.f;
                         int iind = ind + dir * NXtYtZ;
 
-                        float eta = deltaT / deltaX * velocity[ind];
+                        float eta = ratio * velocity[ind];
                         val += scheme(src, iind, 1, eta);
 
-                        eta = deltaT / deltaX * velocity[ind + NXtYtZ];
+                        eta = ratio * velocity[ind + NXtYtZ];
                         val += scheme(src, iind, NX, eta);
 
-                        eta = deltaT / deltaX * velocity[ind + 2 * NXtYtZ];
+                        eta = ratio * velocity[ind + 2 * NXtYtZ];
                         val += scheme(src, iind, NXtY, eta);
 
                         dst[iind] += val;
@@ -364,9 +407,12 @@ namespace {
                 int z = get_global_id(2);
                 int ind = x + y * NX + z * NXtY;
 
-                dst[ind] = factor * scalar[ind] * vec[ind];
-                dst[ind + NXtYtZ] = factor * scalar[ind] * vec[ind + NXtYtZ];
-                dst[ind + 2 * NXtYtZ] = factor * scalar[ind] * vec[ind + 2 * NXtYtZ];
+                float fs = factor * scalar[ind];
+                dst[ind] = fs * vec[ind];
+                ind += NXtYtZ;
+                dst[ind] = fs * vec[ind];
+                ind += NXtYtZ;
+                dst[ind] = fs * vec[ind];
             }
         )#";
 
@@ -393,6 +439,8 @@ void ScalarFieldTimesVectorField(const GPUScalarField & src1, const GPUVectorFie
     kernel.set_arg(4, src1.NX() * src1.NY());
     kernel.set_arg(5, src1.NX() * src1.NY() * src1.NZ());
     kernel.set_arg(6, factor);
+
+    queue.enqueue_nd_range_kernel(kernel, 3, NULL, workDim, NULL);
 }
 
 namespace {
@@ -400,17 +448,19 @@ namespace {
         static std::string source = R"#(
             __kernel void scalarProduct(__global float * dst, __global const float * src1,
                                         __global const float * src2,
-                                        int NX, int NXtY, int NXtYtZ) {
+                                        int NX, int NXtY, int NXtYtZ,
+                                        float factor) {
                 int x = get_global_id(0);
                 int y = get_global_id(1);
                 int z = get_global_id(2);
                 int ind = x + y * NX + z * NXtY;
 
                 dst[ind] = src1[ind] * src2[ind];
-                ind += NXtYtZ;
-                dst[ind] += src1[ind] * src2[ind];
-                ind += NXtYtZ;
-                dst[ind] += src1[ind] * src2[ind];
+                int iind = ind + NXtYtZ;
+                dst[ind] += src1[iind] * src2[iind];
+                iind += NXtYtZ;
+                dst[ind] += src1[iind] * src2[iind];
+                dst[ind] *= factor;
             }
         )#";
 
@@ -420,7 +470,7 @@ namespace {
 }
 
 void ScalarProduct(const GPUVectorField<3> & src1, const GPUVectorField<3> & src2,
-                   GPUScalarField & dst, compute::command_queue & queue) {
+                   GPUScalarField & dst, float factor, compute::command_queue & queue) {
     assert(src1.NX() == src2.NX());
     assert(src1.NY() == src2.NY());
     assert(src1.NZ() == src2.NZ());
@@ -436,4 +486,35 @@ void ScalarProduct(const GPUVectorField<3> & src1, const GPUVectorField<3> & src
     kernel.set_arg(3, src1.NX());
     kernel.set_arg(4, src1.NX() * src1.NY());
     kernel.set_arg(5, src1.NX() * src1.NY() * src1.NZ());
+    kernel.set_arg(6, factor);
+
+    queue.enqueue_nd_range_kernel(kernel, 3, NULL, workDim, NULL);
+}
+
+float DotProduct(const GPUScalarField & src1, const GPUScalarField & src2,
+                 GPUScalarField & accumulator, compute::command_queue & queue) {
+    assert(src1.NX() == src2.NX());
+    assert(src1.NY() == src2.NY());
+    assert(src1.NZ() == src2.NZ());
+    assert(src1.NX() == accumulator.NX());
+    assert(src1.NY() == accumulator.NY());
+    assert(src1.NZ() == accumulator.NZ());
+
+    using compute::lambda::get;
+    using compute::_1;
+
+    compute::for_each(
+        compute::make_zip_iterator(
+            boost::make_tuple(src1.Begin(), src2.Begin(), accumulator.Begin())
+        ),
+        compute::make_zip_iterator(
+            boost::make_tuple(src1.End(), src2.End(), accumulator.End())
+        ),
+        get<2>(_1) = get<0>(_1) * get<1>(_1),
+        queue
+    );
+
+    auto res = 0.f;
+    compute::reduce(accumulator.Begin(), accumulator.End(), &res, compute::plus<float>(), queue);
+    return res;
 }

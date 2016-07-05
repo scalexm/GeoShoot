@@ -15,24 +15,17 @@ class GeoShoot {
 private:
     std::vector<VectorField<3>> DiffeoTimeLine_, InvDiffeoTimeLine_;
 
-    ScalarField Source_, Target_, Momentum_;
     compute::command_queue Queue_;
     FFTConvolver Convolver_;
-    float DeltaX_ = 1.f, DeltaT_;
+    float DeltaX_ = 1.f, DeltaT_, Cost_, Energy_, Alpha_ = 0.001f, MaxUpdate_ = 0.5f;
 
     int N_;
     int NX_, NY_, NZ_;
 
-    GPUScalarField GPUSource_, GPUTarget_, GPUInitialMomentum_, GPUGradientMomentum_;
+    GPUScalarField Source_, Target_, InitialMomentum_, GradientMomentum_;
 
-    GPUVectorField<3> Accumulator1_, Accumulator2_;
-    GPUScalarField ScalarAccumulator1_, ScalarAccumulator2_;
-
-    GPUVectorField<3> TempImageGrad_, TempVelocity_, TempDiffeo_, TempInvDiffeo_;
-    GPUScalarField TempImage_, TempMomentum_;
-
-    GPUVectorField<3> TempAdMomentumGrad_;
-    GPUScalarField TempAdMomentum_, TempAdImage_;
+    GPUScalarField Scalar1_, Scalar2_, Scalar3_, Scalar4_, Scalar5_;
+    GPUVectorField<3> Vector1_, Vector2_, Vector3_, Vector4_;
 
     template<class T>
     void Allocate(T & field) {
@@ -43,11 +36,15 @@ private:
     void Deallocate(T & field) {
         field = T { };
     }
-public:
-    GeoShoot(ScalarField Source, ScalarField Target, ScalarField Momentum, int N,
-             compute::command_queue queue);
-    void Shoot();
+
+    void Shooting();
     void ComputeGradient();
+    void GradientDescent(int, float);
+public:
+    GeoShoot(const ScalarField & Source, const ScalarField & Target, const ScalarField & Momentum,
+             int N, compute::command_queue queue);
+
+    void Run(int iterationsNumber);
 };
 
 #endif

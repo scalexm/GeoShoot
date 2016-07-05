@@ -11,11 +11,13 @@
 
 #include "VectorField.hpp"
 
-// cannot be used in place
 void ComputeGradScalarField(const GPUScalarField & field, GPUVectorField<3> & gradient,
                             float deltaX, compute::command_queue & queue);
 
-// can be used in place
+void ComputeDivVectorField(const GPUVectorField<3> & field, GPUScalarField & div,
+                           float deltaX, compute::command_queue & queue);
+
+// cannot be used in place
 void TransportImage(const GPUScalarField & src, const GPUVectorField<3> & diffeo,
                     GPUScalarField & dst, compute::command_queue & queue);
 
@@ -23,11 +25,10 @@ void TransportImage(const GPUScalarField & src, const GPUVectorField<3> & diffeo
 void TransportMomentum(const GPUScalarField & src, const GPUVectorField<3> & diffeo,
                        GPUScalarField & dst, float deltaX, compute::command_queue & queue);
 
-// to be used in place by construction
 void UpdateDiffeo(const GPUVectorField<3> & velocity, GPUVectorField<3> & diffeo, float deltaT,
                   compute::command_queue & queue);
 
-// to be used in place but needs an accumulator
+// needs an accumulator
 void UpdateInvDiffeo(const GPUVectorField<3> & velocity, GPUVectorField<3> & diffeo,
                      GPUVectorField<3> & accumulator, float deltaT, float deltaX,
                      compute::command_queue & queue);
@@ -63,8 +64,10 @@ void ScalarFieldTimesVectorField(const GPUScalarField & src1, const GPUVectorFie
                                  GPUVectorField<3> & dst, float factor,
                                  compute::command_queue & queue);
 
-// cannot be used in place (not even the same types)
 void ScalarProduct(const GPUVectorField<3> & src1, const GPUVectorField<3> & src2,
-                   GPUScalarField & dst, compute::command_queue & queue);
+                   GPUScalarField & dst, float factor, compute::command_queue & queue);
+
+float DotProduct(const GPUScalarField & src1, const GPUScalarField & src2,
+                 GPUScalarField & accumulator, compute::command_queue & queue);
 
 #endif
