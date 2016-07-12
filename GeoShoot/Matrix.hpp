@@ -15,8 +15,6 @@ template<size_t Row, size_t Col>
 using Matrix = std::array<std::array<float, Col>, Row>;
 
 Matrix<4, 4> Invert4t4Quaternion(const Matrix<4, 4> &);
-
-void TridiagonalSolveFloat(const float * a, const float * b, float * c, float * d,
-                           float *x, int n);
+Matrix<4, 4> Mult4t4Quaternion(const Matrix<4, 4> &, const Matrix<4, 4> &);
 
 #endif

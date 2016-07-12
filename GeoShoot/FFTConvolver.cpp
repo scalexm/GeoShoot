@@ -127,8 +127,6 @@ void FFTConvolver::MakeSumOf7AnisotropicGaussianFilters(
     addKernel.set_arg(0, Filter_);
     addKernel.set_arg(1, temp);
 
-    using boost::compute::_1;
-
     auto sumWeight = 0.f;
     for (auto k = 0; k < 7; ++k) {
         sumWeight += weights[k];
@@ -147,6 +145,8 @@ void FFTConvolver::MakeSumOf7AnisotropicGaussianFilters(
         } else
             std::cout << "One kernel appears to be null or almost null" << std::endl;
     }
+
+    using boost::compute::_1;
 
     if (normalizeWeights)
         compute::transform(Filter_.begin(), Filter_.end(), Filter_.begin(), _1 / sumWeight, Queue_);

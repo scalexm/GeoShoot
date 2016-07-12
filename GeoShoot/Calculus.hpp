@@ -11,6 +11,9 @@
 
 #include "VectorField.hpp"
 
+template<size_t Row, size_t Col>
+using Matrix = std::array<std::array<float, Col>, Row>;
+
 void ComputeGradScalarField(const GPUScalarField & field, GPUVectorField<3> & gradient,
                             float deltaX, compute::command_queue & queue);
 
@@ -69,5 +72,8 @@ void ScalarProduct(const GPUVectorField<3> & src1, const GPUVectorField<3> & src
 
 float DotProduct(const GPUScalarField & src1, const GPUScalarField & src2,
                  GPUScalarField & accumulator, compute::command_queue & queue);
+
+void ProjectImage(const GPUScalarField & src, GPUScalarField & dst, const Matrix<4, 4> & transfo,
+                  compute::command_queue & queue);
 
 #endif

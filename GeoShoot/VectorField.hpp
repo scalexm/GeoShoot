@@ -15,6 +15,9 @@
 #include <array>
 #include <type_traits>
 
+template<size_t Row, size_t Col>
+using Matrix = std::array<std::array<float, Col>, Row>;
+
 namespace compute = boost::compute;
 
 struct CPUPolicy {
@@ -43,7 +46,7 @@ private:
 
     int NX_ = 0, NY_ = 0, NZ_ = 0;
     int NXtY_ = 0, NXtYtZ_ = 0;
-    std::array<std::array<float, 4>, 4> Image2World_, World2Image_;
+    Matrix<4, 4> Image2World_, World2Image_;
 
     typename DevicePolicy::Container VecField_;
 
@@ -67,6 +70,14 @@ public:
         memset(&Image2World_[0], 0, 16 * sizeof(float));
         Image2World_[0][0] = Image2World_[1][1] = Image2World_[2][2] = Image2World_[3][3] = 1;
         World2Image_ = Image2World_;
+    }
+
+    const Matrix<4, 4> & Image2World() const {
+        return Image2World_;
+    }
+
+    const Matrix<4, 4> & World2Image() const {
+        return World2Image_;
     }
 
     size_t FlatSize() const {
@@ -162,7 +173,7 @@ public:
                 auto eq_z = dir.NZ() == field.NZ();
                 auto eq_t = dir.NT() == field.NT();
                 if (!eq_x || !eq_y || !eq_z || !eq_t)
-                    throw std::invalid_argument { "directions do not have the same lengths" };
+                    throw std::invalid_argument { "directions do not have the same dimensions" };
             }
 
             if (dim == 0) {

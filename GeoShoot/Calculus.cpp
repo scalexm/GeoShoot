@@ -22,7 +22,8 @@ namespace {
                 int NXtYtZ = NX * NY * NZ;
                 int ind = x + y * NX + z * NXtY;
 
-                if (x == 0 || y == 0 || z == 0 || x == NX - 1 || y == NY - 1 || z == NZ - 1) {
+                int z_cond = (NZ != 1) && (z == 0 || z == NZ - 1);
+                if (x == 0 || y == 0 || x == NX - 1 || y == NY - 1 || z_cond) {
                     grad[ind] = 0.f;
                     grad[ind + NXtYtZ] = 0.f;
                     grad[ind + 2 * NXtYtZ] = 0.f;
@@ -30,7 +31,8 @@ namespace {
                     float twoDelta = 2.f * deltaX;
                     grad[ind] = (field[ind + 1] - field[ind - 1]) / twoDelta;
                     grad[ind + NXtYtZ] = (field[ind + NX] - field[ind - NX]) / twoDelta;
-                    grad[ind + 2 * NXtYtZ] = (field[ind + NXtY] - field[ind - NXtY]) / twoDelta;
+                    if (NZ != 1)
+                        grad[ind + 2 * NXtYtZ] = (field[ind + NXtY] - field[ind - NXtY]) / twoDelta;
                 }
             }
         )#";
@@ -49,15 +51,18 @@ namespace {
                 int NXtYtZ = NX * NY * NZ;
                 int ind = x + y * NX + z * NXtY;
 
-                if (x == 0 || y == 0 || z == 0 || x == NX - 1 || y == NY - 1 || z == NZ - 1) {
+                int z_cond = (NZ != 1) && (z == 0 || z == NZ - 1);
+                if (x == 0 || y == 0 || x == NX - 1 || y == NY - 1 || z_cond) {
                     div[ind] = 0.f;
                 } else {
                     float twoDelta = 2.f * deltaX;
                     div[ind] = (field[ind + 1] - field[ind - 1]) / twoDelta;
                     int iind = ind + NXtYtZ;
                     div[ind] += (field[iind + NX] - field[iind - NX]) / twoDelta;
-                    iind += NXtYtZ;
-                    div[ind] += (field[iind + NXtY] - field[iind - NXtY]) / twoDelta;
+                    if (NZ != 1) {
+                        iind += NXtYtZ;
+                        div[ind] += (field[iind + NXtY] - field[iind - NXtY]) / twoDelta;
+                    }
                 }
             }
         )#";
@@ -110,12 +115,12 @@ namespace {
             int NXtY = NX * NY;
             int NXtYtZ = NXtY * NZ;
 
-            if (x < 0.) x = 0.0001;
-            if (x >= NX - 1.) x = NX - 1.0001;
-            if (y < 0.) y = 0.0001;
-            if (y >= NY - 1.) y = NY - 1.0001;
-            if (z < 0.) z = 0.0001;
-            if (z >= NZ - 1.) z = NZ - 1.0001;
+            if (x < 0.f) x = 0.0001f;
+            if (x >= NX - 1.f) x = NX - 1.0001f;
+            if (y < 0.f) y = 0.0001f;
+            if (y >= NY - 1.f) y = NY - 1.0001;
+            if (z < 0.f) z = 0.0001f;
+            if (z >= NZ - 1.f) z = NZ - 1.0001f;
 
             int xi = (int)x; float xwm = 1 - (x - (float)xi); float xwp = x - (float)xi;
             int yi = (int)y; float ywm = 1 - (y - (float)yi); float ywp = y - (float)yi;
@@ -191,7 +196,8 @@ namespace {
                 int NXtYtZ = NXtY * NZ;
                 int ind = x + y * NX + z * NXtY;
 
-                if (x == 0 || y == 0 || z == 0 || x == NX - 1 || y == NY - 1 || z == NZ - 1)
+                int z_cond = (NZ != 1) && (z == 0 || z == NZ - 1);
+                if (x == 0 || y == 0 || x == NX - 1 || y == NY - 1 || z_cond)
                     dst[ind] = src[ind];
                 else {
                     float twoDelta = 2.f * deltaX;
@@ -206,17 +212,22 @@ namespace {
                     float d23 = (diffeo[iind + NXtY] - diffeo[iind - NXtY]) / twoDelta;
                     float yy = diffeo[iind];
 
-                    iind += NXtYtZ;
-                    float d31 = (diffeo[iind + 1] - diffeo[iind - 1]) / twoDelta;
-                    float d32 = (diffeo[iind + NX] - diffeo[iind - NX]) / twoDelta;
-                    float d33 = (diffeo[iind + NXtY] - diffeo[iind - NXtY]) / twoDelta;
-                    float zz = diffeo[iind];
+                    if (NZ != 1) {
+                        iind += NXtYtZ;
+                        float d31 = (diffeo[iind + 1] - diffeo[iind - 1]) / twoDelta;
+                        float d32 = (diffeo[iind + NX] - diffeo[iind - NX]) / twoDelta;
+                        float d33 = (diffeo[iind + NXtY] - diffeo[iind - NXtY]) / twoDelta;
+                        float zz = diffeo[iind];
 
-                    float val = interp(src, 0, xx, yy, zz, NX, NY, NZ);
+                        float val = interp(src, 0, xx, yy, zz, NX, NY, NZ);
 
-                    // Jacobian
-                    dst[ind] =
-                        val*(d11*(d22*d33-d32*d23)-d21*(d12*d33-d32*d13)+d31*(d12*d23-d22*d13));
+                        // Jacobian
+                        dst[ind] =
+                            val*(d11*(d22*d33-d32*d23)-d21*(d12*d33-d32*d13)+d31*(d12*d23-d22*d13));
+                    } else {
+                        float val = interp(src, 0, xx, yy, 0, NX, NY, NZ);
+                        dst[ind] = val * (d11*d22-d21*d12);
+                    }
                 }
             }
         )#";
@@ -301,8 +312,10 @@ namespace {
                 return 0.f;
             }
 
-            float scheme(__global const float * src,
+            float scheme(__global const float * src, __global int * cfl,
                          int ind, int offset, float eta) {
+                if (fabs(eta) > 1)
+                    *cfl = 1;
                 float deltaB = src[ind] - src[ind - offset];
                 float deltaF = src[ind + offset] - src[ind];
                 if (eta >= 0.f) {
@@ -317,7 +330,7 @@ namespace {
             }
 
             __kernel void updateInvDiffeo(__global float * dst, __global const float * velocity,
-                                          __global const float * src,
+                                          __global const float * src, __global int * cfl,
                                           int NX, int NY, int NZ,
                                           float deltaT, float deltaX) {
                 int x = get_global_id(0);
@@ -327,20 +340,23 @@ namespace {
                 int NXtYtZ = NXtY * NZ;
                 int ind = x + y * NX + z * NXtY;
 
-                if (x > 1 && y > 1 && z > 1 && x < NX - 2 && y < NY - 2 && z < NZ - 2) {
+                int z_cond = (NZ == 1) || (z > 1 && z < NZ - 2);
+                if (x > 1 && y > 1 && x < NX - 2 && y < NY - 2 && z_cond) {
                     float ratio = deltaT / deltaX;
                     for (int dir = 0; dir < 3; ++dir) {
                         float val = 0.f;
                         int iind = ind + dir * NXtYtZ;
 
                         float eta = ratio * velocity[ind];
-                        val += scheme(src, iind, 1, eta);
+                        val += scheme(src, cfl, iind, 1, eta);
 
                         eta = ratio * velocity[ind + NXtYtZ];
-                        val += scheme(src, iind, NX, eta);
+                        val += scheme(src, cfl, iind, NX, eta);
 
-                        eta = ratio * velocity[ind + 2 * NXtYtZ];
-                        val += scheme(src, iind, NXtY, eta);
+                        if (NZ != 1) {
+                            eta = ratio * velocity[ind + 2 * NXtYtZ];
+                            val += scheme(src, cfl, iind, NXtY, eta);
+                        }
 
                         dst[iind] += val;
                     }
@@ -381,19 +397,28 @@ void UpdateInvDiffeo(const GPUVectorField<3> & velocity, GPUVectorField<3> & dif
     assert(accumulator.NZ() == diffeo.NZ());
 
     compute::copy(diffeo.Begin(), diffeo.End(), accumulator.Begin(), queue);
+    compute::vector<int> cfl(1, queue.get_context());
+    compute::fill(cfl.begin(), cfl.end(), 0, queue);
 
     auto kernel = UpdateInvDiffeoKernel().create_kernel("updateInvDiffeo");
     size_t workDim[3] = { (size_t) diffeo.NX(), (size_t) diffeo.NY(), (size_t) diffeo.NZ() };
     kernel.set_arg(0, diffeo.Buffer());
     kernel.set_arg(1, velocity.Buffer());
     kernel.set_arg(2, accumulator.Buffer());
-    kernel.set_arg(3, diffeo.NX());
-    kernel.set_arg(4, diffeo.NY());
-    kernel.set_arg(5, diffeo.NZ());
-    kernel.set_arg(6, deltaT);
-    kernel.set_arg(7, deltaX);
+    kernel.set_arg(3, cfl);
+    kernel.set_arg(4, diffeo.NX());
+    kernel.set_arg(5, diffeo.NY());
+    kernel.set_arg(6, diffeo.NZ());
+    kernel.set_arg(7, deltaT);
+    kernel.set_arg(8, deltaX);
 
     queue.enqueue_nd_range_kernel(kernel, 3, NULL, workDim, NULL);
+
+    int res;
+    compute::copy(cfl.begin(), cfl.end(), &res, queue);
+
+    if (res == 1)
+        std::cout << "CFL condition not respected" << std::endl;
 }
 
 namespace {
@@ -517,4 +542,49 @@ float DotProduct(const GPUScalarField & src1, const GPUScalarField & src2,
     auto res = 0.f;
     compute::reduce(accumulator.Begin(), accumulator.End(), &res, compute::plus<float>(), queue);
     return res;
+}
+
+namespace {
+    compute::program & TransfoKernel() {
+        static std::string source = InterpSource + R"#(
+            __kernel void transfo(__global float * dst, __global const float * src,
+                                  __global const float * transfo,
+                                  int NX, int NY, int NZ) {
+                int xx = get_global_id(0);
+                int yy = get_global_id(1);
+                int zz = get_global_id(2);
+                int ind = xx + yy * NX + zz * NX * NZ;
+
+                float xt = xx, yt = yy, zt = zz, x = xx, y = yy, z = zz;
+                x=xt*transfo[0]+yt*transfo[1]+zt*transfo[2]+transfo[3];
+                y=xt*transfo[4]+yt*transfo[5]+zt*transfo[6]+transfo[7];
+                z=xt*transfo[8]+yt*transfo[9]+zt*transfo[10]+transfo[11];
+
+                dst[ind] = interp(src, 0, x, y, z, NX, NY, NZ);
+            }
+        )#";
+
+        MAKE_PROGRAM(source, GetContext());
+    }
+}
+
+void ProjectImage(const GPUScalarField & src, GPUScalarField & dst, const Matrix<4, 4> & transfo,
+                  compute::command_queue & queue) {
+    assert(src.NX() == dst.NX());
+    assert(src.NY() == dst.NY());
+    assert(src.NZ() == dst.NZ());
+
+    compute::array<float, 16> deviceTransfo(queue.get_context());
+    compute::copy(&transfo[0][0], &transfo[0][0] + 16, deviceTransfo.begin(), queue);
+
+    auto kernel = TransfoKernel().create_kernel("transfo");
+    size_t workDim[3] = { (size_t) src.NX(), (size_t) src.NX(), (size_t) src.NZ() };
+    kernel.set_arg(0, dst.Buffer());
+    kernel.set_arg(1, src.Buffer());
+    kernel.set_arg(2, deviceTransfo);
+    kernel.set_arg(3, src.NX());
+    kernel.set_arg(4, src.NY());
+    kernel.set_arg(5, src.NZ());
+
+    queue.enqueue_nd_range_kernel(kernel, 3, NULL, workDim, NULL);
 }

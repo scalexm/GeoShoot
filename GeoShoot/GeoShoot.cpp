@@ -14,23 +14,27 @@
 #include <iostream>
 
 /* GPU MEMORY TOTAL USAGE: 21 (GeoShoot) + 4 (FFT) scalar fields */
-/* CPU MEMORY TOTAL USAGE: 10 * (h + 1) + 1 scalar fields  */
+/* CPU MEMORY TOTAL USAGE: 2 * 3 * N scalar fields  */
 
-GeoShoot::GeoShoot(const ScalarField & Source, const ScalarField & Target,
-                   const ScalarField & Momentum, int N, compute::command_queue queue)
-                   : N_ { N },
+GeoShoot::GeoShoot(const ScalarField & source, const ScalarField & target,
+                   const ScalarField & momentum, const Matrix<4, 4> & transfo, int N,
+                   compute::command_queue queue)
+                   : N_ { std::max(1, N) },
                      Queue_ { queue },
                      Convolver_ { queue } {
-    assert(Source.NX() == Momentum.NX());
-    assert(Source.NY() == Momentum.NY());
-    assert(Source.NZ() == Momentum.NZ());
-    assert(Source.NX() == Target.NX());
-    assert(Source.NY() == Target.NY());
-    assert(Source.NZ() == Target.NZ());
+    if (source.NX() != momentum.NX()
+        || source.NY() != momentum.NY()
+        || source.NZ() != momentum.NZ()
+        || source.NX() != target.NX()
+        || source.NY() != target.NY()
+        || source.NZ() != target.NZ()) {
 
-    NX_ = Source.NX();
-    NY_ = Source.NY();
-    NZ_ = Source.NZ();
+        throw std::invalid_argument { "images do not have the same dimensions" };
+    }
+
+    NX_ = source.NX();
+    NY_ = source.NY();
+    NZ_ = source.NZ();
 
     DeltaT_ = 1.f / ((float) (N_ - 1));
 
@@ -39,10 +43,6 @@ GeoShoot::GeoShoot(const ScalarField & Source, const ScalarField & Target,
     Allocate(InitialMomentum_);
     Allocate(Target_);
     Allocate(GradientMomentum_);
-
-    compute::copy(Source.Begin(), Source.End(), Source_.Begin(), Queue_);
-    compute::copy(Momentum.Begin(), Momentum.End(), InitialMomentum_.Begin(), Queue_);
-    compute::copy(Target.Begin(), Target.End(), Target_.Begin(), Queue_);
 
     // GPU fields used for computations
     Allocate(Scalar1_);
@@ -55,11 +55,43 @@ GeoShoot::GeoShoot(const ScalarField & Source, const ScalarField & Target,
     Allocate(Vector3_);
     Allocate(Vector4_);
 
-    Convolver_.InitiateConvolver(NX_, NY_, NZ_,
-        { 100.f, 80.3515f, 63.4543f, 49.7454f, 38.8999f, 30.5439f, 24.2221f },
-        { 2.5f, 2.25f, 2.1f, 1.75f, 1.5f, 1.25f, 1.f },
-        { 2.5f, 2.25f, 2.1f, 1.75f, 1.5f, 1.25f, 1.f },
-        { 2.5f, 2.25f, 2.1f, 1.75f, 1.5f, 1.25f, 1.f });
+    compute::copy(source.Begin(), source.End(), Source_.Begin(), Queue_);
+    compute::copy(momentum.Begin(), momentum.End(), InitialMomentum_.Begin(), Queue_);
+    compute::copy(target.Begin(), target.End(), Scalar1_.Begin(), Queue_);
+
+    auto template2TargetCoord = Invert4t4Quaternion(transfo);
+    template2TargetCoord = Mult4t4Quaternion(template2TargetCoord, source.Image2World());
+    template2TargetCoord = Mult4t4Quaternion(target.World2Image(), template2TargetCoord);
+
+    std::cout << "\nTemplate to target:\n";
+    for (auto && r : template2TargetCoord) {
+        for (auto && c : r) {
+            std::cout << c << " ";
+        }
+        std::cout << std::endl;
+    }
+
+    ProjectImage(Scalar1_, Target_, template2TargetCoord, Queue_);
+
+    auto && mat = source.Image2World();
+    Xmm_ = sqrt(mat[0][0]*mat[0][0]+mat[0][1]*mat[0][1]+mat[0][2]*mat[0][2]);
+    Ymm_ = sqrt(mat[1][0]*mat[1][0]+mat[1][1]*mat[1][1]+mat[1][2]*mat[1][2]);
+    Zmm_ = sqrt(mat[2][0]*mat[2][0]+mat[2][1]*mat[2][1]+mat[2][2]*mat[2][2]);
+
+    std::cout << "Template image resolution: " << Xmm_ << " "  << Ymm_ << " "  << Zmm_ << std::endl;
+
+    if (fabs(Xmm_ - Ymm_) > 0.0001f || fabs(Xmm_ - Zmm_) > 0.0001f) {
+        std::cout << "The image-to-world matrix of the source (template) image should be isotropic"
+                  << "and this is not the case here!" << std::endl;
+    }
+
+    DiffeoTimeLine_.resize(N_);
+    InvDiffeoTimeLine_.resize(N_);
+
+    for (auto n = 0; n < N_; ++n) {
+        Allocate(DiffeoTimeLine_[n]);
+        Allocate(InvDiffeoTimeLine_[n]);
+    }
 }
 
 namespace {
@@ -98,19 +130,17 @@ void GeoShoot::Shooting() {
 
     // at iteration tau: Vector1_ == phi(tau), Vector2_ == phi^{-1}(tau)
     for (auto tau = 0; tau < N_; ++tau) {
-        DiffeoTimeLine_.emplace_back(NX_, NY_, NZ_);
         compute::copy(
             Vector1_.Begin(),
             Vector1_.End(),
-            DiffeoTimeLine_.back().Begin(),
+            DiffeoTimeLine_[tau].Begin(),
             Queue_
         );
-        
-        InvDiffeoTimeLine_.emplace_back(NX_, NY_, NZ_);
+
         compute::copy(
             Vector2_.Begin(),
             Vector2_.End(),
-            InvDiffeoTimeLine_.back().Begin(),
+            InvDiffeoTimeLine_[tau].Begin(),
             Queue_
         );
 
@@ -126,10 +156,10 @@ void GeoShoot::Shooting() {
         Convolver_.Convolution(Vector3_); // Vector3_ <- -K (*) [P(tau) x nabla(I)] = v(tau)
 
         if (tau == 0) { // init GradientMomentum_
-            ScalarProduct(Vector4_, Vector3_, GradientMomentum_, -Alpha_, Queue_);
+            ScalarProduct(Vector4_, Vector3_, GradientMomentum_, -Alpha, Queue_);
             Energy_ +=
                 0.5 * DotProduct(GradientMomentum_, InitialMomentum_, Scalar1_, Queue_);
-            std::cout << "Energy of the vector field: " << Energy_ << std::endl;
+            std::cout << "Energy of the vector field: " << Energy_ << "\n";
 
             if (N_ == 1)
                 break;
@@ -169,10 +199,10 @@ void GeoShoot::ComputeGradient() {
     );
 
     Cost_ += similarityMeasure * 0.5f;
-    std::cout << "Similarity measure: " << Cost_ << std::endl;
+    std::cout << "Similarity measure: " << Cost_ << "\n";
 
     Cost_ += Energy_;
-    std::cout << "Global cost: " << Cost_ << std::endl;
+    std::cout << "Global cost: " << Cost_ << "\n";
 
     AddFields(Target_, Scalar3_, Scalar4_, -1.f, Queue_); // Scalar4_ <- J - I(1) = \hat{I}(1)
     TransportMomentum(Scalar4_, Vector1_, Scalar1_, DeltaX_, Queue_); // Scalar1_ <- \tilde{I}(1) (Vector1_ still conntains phi(1))
@@ -238,9 +268,8 @@ void GeoShoot::GradientDescent(int iterationsNumber, float gradientStep) {
     auto currentCost = optimizedCost;
     auto localCounter = 0;
     for (auto i = 0; i < iterationsNumber; ++i) {
-        DiffeoTimeLine_.clear();
-        InvDiffeoTimeLine_.clear();
-        std::cout << "\tGradient iteration number " << (i + 1) << std::endl;
+        std::cout << std::endl;
+        std::cout << "\tGradient iteration number " << (i + 1) << "\n";
         Shooting();
         ComputeGradient();
 
@@ -262,21 +291,134 @@ void GeoShoot::GradientDescent(int iterationsNumber, float gradientStep) {
         ScalarFieldTimesVectorField(GradientMomentum_, Vector1_, Vector1_, -1.f, Queue_);
         Convolver_.Convolution(Vector1_);
 
-        auto temp = MaxUpdate_ / Vector1_.MaxAbsVal(Queue_);
+        auto temp = MaxUpdate / Vector1_.MaxAbsVal(Queue_);
 
         AddFields(
             InitialMomentum_,
             GradientMomentum_,
             InitialMomentum_,
-            -temp * gradientStep, Queue_
+            -temp * gradientStep,
+            Queue_
         );
     }
 }
 
 void GeoShoot::Run(int iterationsNumber) {
-    GradientDescent(iterationsNumber, 0.5f);
+    iterationsNumber = std::max(1, iterationsNumber);
 
-    auto m = ScalarField { NX_, NY_, NZ_ };
-    compute::copy(InitialMomentum_.Begin(), InitialMomentum_.End(), m.Begin(), Queue_);
-    m.Write({"/Users/alexm/Desktop/m.nii"});
+    if (!Init_) {
+        for (auto i = 0; i < 7; ++i) {
+            SigmaXs[i] /= Xmm_;
+            SigmaYs[i] /= Ymm_;
+            SigmaZs[i] /= Zmm_;
+        }
+
+        if (fabs(Weights[0]) > 0.01f) {
+            auto sum = std::accumulate(Weights.begin(), Weights.end(), 0.f);
+            for (auto && w : Weights)
+                w /= sum;
+        }
+
+        Convolver_.InitiateConvolver(
+            NX_, NY_, NZ_,
+            Weights,
+            SigmaXs,
+            SigmaYs,
+            SigmaZs
+        );
+
+        if (fabs(Weights[0]) < 0.01f)
+            ReInitiateConvolver_HomoAppaWeights();
+
+        Init_ = true;
+    }
+
+    GradientDescent(iterationsNumber, 0.5f);
+}
+
+void GeoShoot::Save(std::string path) {
+    if (path.back() != '/')
+        path += '/';
+
+    auto momentum = ScalarField { NX_, NY_, NZ_ };
+    compute::copy(InitialMomentum_.Begin(), InitialMomentum_.End(), momentum.Begin(), Queue_);
+    auto momentumPath = path + "Momentum.nii";
+    momentum.Write({ momentumPath.c_str() });
+
+    auto final = ScalarField { NX_, NY_, NZ_ };
+    auto finalPath = path + "FinalDefSrc.nii";
+    compute::copy(
+        InvDiffeoTimeLine_.back().Begin(),
+        InvDiffeoTimeLine_.back().End(),
+        Vector1_.Begin(),
+        Queue_
+    );
+    TransportImage(Source_, Vector1_, Scalar1_, Queue_);
+    compute::copy(Scalar1_.Begin(), Scalar1_.End(), final.Begin(), Queue_);
+    final.Write({ finalPath.c_str() });
+}
+
+namespace {
+    compute::program & MaxGradKernel() {
+        static std::string source = R"#(
+            __kernel void maxGrad(__global float * dst, __global const float * field,
+                                  int NX, int NY, int NZ) {
+                int x = get_global_id(0);
+                int y = get_global_id(1);
+                int z = get_global_id(2);
+                int NXtY = NX * NY;
+                int NXtYtZ = NX * NY * NZ;
+                int ind = x + y * NX + z * NXtY;
+
+                dst[ind] = 2.f * sqrt(field[ind] * field[ind]
+                    + field[ind + NXtYtZ] * field[ind + NXtYtZ]
+                    + field[ind + 2 * NXtYtZ] * field[ind + 2 * NXtYtZ]);
+            }
+        )#";
+
+        MAKE_PROGRAM(source, GetContext());
+    }
+}
+
+void GeoShoot::ReInitiateConvolver_HomoAppaWeights() {
+    ComputeGradScalarField(Target_, Vector1_, DeltaX_, Queue_);
+
+    float realW1;
+
+    auto kernel = MaxGradKernel().create_kernel("maxGrad");
+    size_t workDim[3] = { (size_t) NX_, (size_t) NY_, (size_t) NY_ };
+    kernel.set_arg(0, Scalar1_.Buffer());
+    kernel.set_arg(1, Vector2_.Buffer());
+    kernel.set_arg(2, NX_);
+    kernel.set_arg(3, NY_);
+    kernel.set_arg(4, NZ_);
+
+    for (auto i = 0; i < 7; ++i) {
+        Convolver_.ChangeKernel(
+            { 1.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f },
+            { SigmaXs[i], 1.f, 1.f, 1.f, 1.f, 1.f, 1.f },
+            { SigmaYs[i], 1.f, 1.f, 1.f, 1.f, 1.f, 1.f },
+            { SigmaZs[i], 1.f, 1.f, 1.f, 1.f, 1.f, 1.f }
+        );
+
+        AddFields(Source_, Target_, Scalar1_, -1.f, Queue_);
+        ScalarFieldTimesVectorField(Scalar1_, Vector1_, Vector2_, 1.f, Queue_);
+
+        Convolver_.Convolution(Vector2_);
+
+        Queue_.enqueue_nd_range_kernel(kernel, 3, NULL, workDim, NULL);
+        float maxGrad = *compute::max_element(Scalar1_.Begin(), Scalar1_.End(), Queue_);
+
+        if (i == 0) {
+            Weights[i] = 100.f;
+            realW1 = 1.f / maxGrad;
+        } else
+            Weights[i] = 100.f / maxGrad / realW1;
+
+        std::cout << "sigma" << (i + 1) << " = " << (SigmaXs[i] * Xmm_)
+                  << " / weight" << (i + 1) << " = " << Weights[i] << "\n";
+    }
+
+    std::cout << std::endl;
+    Convolver_.ChangeKernel(Weights, SigmaXs, SigmaYs, SigmaZs);
 }
