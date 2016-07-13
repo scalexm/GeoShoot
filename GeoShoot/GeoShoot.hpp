@@ -54,10 +54,10 @@ public:
     void Run(int iterationsNumber);
     void Save(std::string path);
 
-    std::array<float, 7> Weights = { 100.f, 80.3515f, 63.4543f, 49.7454f, 38.8999f, 30.5439f, 24.2221f },
-        SigmaXs = { 2.5f, 2.25f, 2.1f, 1.75f, 1.5f, 1.25f, 1.f },
-        SigmaYs = { 2.5f, 2.25f, 2.1f, 1.75f, 1.5f, 1.25f, 1.f },
-        SigmaZs = { 2.5f, 2.25f, 2.1f, 1.75f, 1.5f, 1.25f, 1.f };
+    std::array<float, 7> Weights = { 100.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f },
+        SigmaXs = { 3.f, 3.f, 3.f, 3.f, 3.f, 3.f, 3.f },
+        SigmaYs = { 3.f, 3.f, 3.f, 3.f, 3.f, 3.f, 3.f },
+        SigmaZs = { 3.f, 3.f, 3.f, 3.f, 3.f, 3.f, 3.f };
 
     float Alpha = 0.001f, MaxUpdate = 0.5f;
 };

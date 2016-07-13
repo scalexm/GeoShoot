@@ -82,7 +82,7 @@ GeoShoot::GeoShoot(const ScalarField & source, const ScalarField & target,
 
     if (fabs(Xmm_ - Ymm_) > 0.0001f || fabs(Xmm_ - Zmm_) > 0.0001f) {
         std::cout << "The image-to-world matrix of the source (template) image should be isotropic"
-                  << "and this is not the case here!" << std::endl;
+                  << " and this is not the case here!" << std::endl;
     }
 
     DiffeoTimeLine_.resize(N_);
@@ -300,6 +300,13 @@ void GeoShoot::GradientDescent(int iterationsNumber, float gradientStep) {
             -temp * gradientStep,
             Queue_
         );
+
+        /*if (i == 20) {
+            auto m = ScalarField { NX_, NY_, NZ_ };
+            compute::copy(InitialMomentum_.Begin(), InitialMomentum_.End(), m.Begin(), Queue_);
+            m.Write({"/Users/alexm/Desktop/lol2.nii"});
+            exit(0);
+        }*/
     }
 }
 
@@ -367,7 +374,7 @@ namespace {
                 int y = get_global_id(1);
                 int z = get_global_id(2);
                 int NXtY = NX * NY;
-                int NXtYtZ = NX * NY * NZ;
+                int NXtYtZ = NXtY * NZ;
                 int ind = x + y * NX + z * NXtY;
 
                 dst[ind] = 2.f * sqrt(field[ind] * field[ind]
@@ -386,7 +393,7 @@ void GeoShoot::ReInitiateConvolver_HomoAppaWeights() {
     float realW1;
 
     auto kernel = MaxGradKernel().create_kernel("maxGrad");
-    size_t workDim[3] = { (size_t) NX_, (size_t) NY_, (size_t) NY_ };
+    size_t workDim[3] = { (size_t) NX_, (size_t) NY_, (size_t) NZ_ };
     kernel.set_arg(0, Scalar1_.Buffer());
     kernel.set_arg(1, Vector2_.Buffer());
     kernel.set_arg(2, NX_);
@@ -407,7 +414,8 @@ void GeoShoot::ReInitiateConvolver_HomoAppaWeights() {
         Convolver_.Convolution(Vector2_);
 
         Queue_.enqueue_nd_range_kernel(kernel, 3, NULL, workDim, NULL);
-        float maxGrad = *compute::max_element(Scalar1_.Begin(), Scalar1_.End(), Queue_);
+        auto it = compute::max_element(Scalar1_.Begin(), Scalar1_.End(), Queue_);
+        auto maxGrad = it.read(Queue_);
 
         if (i == 0) {
             Weights[i] = 100.f;

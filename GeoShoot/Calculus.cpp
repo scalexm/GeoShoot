@@ -19,7 +19,7 @@ namespace {
                 int y = get_global_id(1);
                 int z = get_global_id(2);
                 int NXtY = NX * NY;
-                int NXtYtZ = NX * NY * NZ;
+                int NXtYtZ = NXtY * NZ;
                 int ind = x + y * NX + z * NXtY;
 
                 int z_cond = (NZ != 1) && (z == 0 || z == NZ - 1);
@@ -33,6 +33,8 @@ namespace {
                     grad[ind + NXtYtZ] = (field[ind + NX] - field[ind - NX]) / twoDelta;
                     if (NZ != 1)
                         grad[ind + 2 * NXtYtZ] = (field[ind + NXtY] - field[ind - NXtY]) / twoDelta;
+                    else
+                        grad[ind + 2 * NXtYtZ] = 0.f;
                 }
             }
         )#";
@@ -48,7 +50,7 @@ namespace {
                 int y = get_global_id(1);
                 int z = get_global_id(2);
                 int NXtY = NX * NY;
-                int NXtYtZ = NX * NY * NZ;
+                int NXtYtZ = NXtY * NZ;
                 int ind = x + y * NX + z * NXtY;
 
                 int z_cond = (NZ != 1) && (z == 0 || z == NZ - 1);
@@ -134,9 +136,9 @@ namespace {
                 float wpm = xwp * ywm;
                 float wpp = xwp * ywp;
 
-                interpoGreyLevel = wmm * field[ind + yi * NX + (xi)];
-                interpoGreyLevel += wmp * field[ind + (yi + 1) * NX + (xi)];
+                interpoGreyLevel = wmm * field[ind + yi * NX + xi];
                 interpoGreyLevel += wpm * field[ind + yi * NX + xi + 1];
+                interpoGreyLevel += wmp * field[ind + (yi + 1) * NX + xi];
                 interpoGreyLevel += wpp * field[ind + (yi + 1) * NX + xi + 1];
             } else { //3D IMAGE
                 float wmmm = xwm * ywm * zwm, wmmp = xwm * ywm * zwp, wmpm = xwm * ywp * zwm,
@@ -203,31 +205,33 @@ namespace {
                     float twoDelta = 2.f * deltaX;
                     float d11 = (diffeo[ind + 1] - diffeo[ind - 1]) / twoDelta;
                     float d12 = (diffeo[ind + NX] - diffeo[ind - NX]) / twoDelta;
-                    float d13 = (diffeo[ind + NXtY] - diffeo[ind - NXtY]) / twoDelta;
+                    float d13;
+                    if (NZ != 1)
+                        d13 = (diffeo[ind + NXtY] - diffeo[ind - NXtY]) / twoDelta;
                     float xx = diffeo[ind];
 
                     int iind = ind + NXtYtZ;
                     float d21 = (diffeo[iind + 1] - diffeo[iind - 1]) / twoDelta;
                     float d22 = (diffeo[iind + NX] - diffeo[iind - NX]) / twoDelta;
-                    float d23 = (diffeo[iind + NXtY] - diffeo[iind - NXtY]) / twoDelta;
+                    float d23;
+                    if (NZ != 1)
+                        d23 = (diffeo[iind + NXtY] - diffeo[iind - NXtY]) / twoDelta;
                     float yy = diffeo[iind];
 
+                    iind += NXtYtZ;
+                    float zz = diffeo[iind];
+                    float val = interp(src, 0, xx, yy, zz, NX, NY, NZ);
+
                     if (NZ != 1) {
-                        iind += NXtYtZ;
                         float d31 = (diffeo[iind + 1] - diffeo[iind - 1]) / twoDelta;
                         float d32 = (diffeo[iind + NX] - diffeo[iind - NX]) / twoDelta;
                         float d33 = (diffeo[iind + NXtY] - diffeo[iind - NXtY]) / twoDelta;
-                        float zz = diffeo[iind];
-
-                        float val = interp(src, 0, xx, yy, zz, NX, NY, NZ);
 
                         // Jacobian
                         dst[ind] =
                             val*(d11*(d22*d33-d32*d23)-d21*(d12*d33-d32*d13)+d31*(d12*d23-d22*d13));
-                    } else {
-                        float val = interp(src, 0, xx, yy, 0, NX, NY, NZ);
+                    } else
                         dst[ind] = val * (d11*d22-d21*d12);
-                    }
                 }
             }
         )#";
@@ -456,7 +460,7 @@ void ScalarFieldTimesVectorField(const GPUScalarField & src1, const GPUVectorFie
     assert(src1.NZ() == dst.NZ());
 
     auto kernel = STimesV_Kernel().create_kernel("stimesv");
-    size_t workDim[3] = { (size_t) src1.NX(), (size_t) src1.NX(), (size_t) src1.NZ() };
+    size_t workDim[3] = { (size_t) src1.NX(), (size_t) src1.NY(), (size_t) src1.NZ() };
     kernel.set_arg(0, dst.Buffer());
     kernel.set_arg(1, src1.Buffer());
     kernel.set_arg(2, src2.Buffer());
@@ -504,7 +508,7 @@ void ScalarProduct(const GPUVectorField<3> & src1, const GPUVectorField<3> & src
     assert(src1.NZ() == dst.NZ());
 
     auto kernel = ScalarProductKernel().create_kernel("scalarProduct");
-    size_t workDim[3] = { (size_t) src1.NX(), (size_t) src1.NX(), (size_t) src1.NZ() };
+    size_t workDim[3] = { (size_t) src1.NX(), (size_t) src1.NY(), (size_t) src1.NZ() };
     kernel.set_arg(0, dst.Buffer());
     kernel.set_arg(1, src1.Buffer());
     kernel.set_arg(2, src2.Buffer());
@@ -578,7 +582,7 @@ void ProjectImage(const GPUScalarField & src, GPUScalarField & dst, const Matrix
     compute::copy(&transfo[0][0], &transfo[0][0] + 16, deviceTransfo.begin(), queue);
 
     auto kernel = TransfoKernel().create_kernel("transfo");
-    size_t workDim[3] = { (size_t) src.NX(), (size_t) src.NX(), (size_t) src.NZ() };
+    size_t workDim[3] = { (size_t) src.NX(), (size_t) src.NY(), (size_t) src.NZ() };
     kernel.set_arg(0, dst.Buffer());
     kernel.set_arg(1, src.Buffer());
     kernel.set_arg(2, deviceTransfo);

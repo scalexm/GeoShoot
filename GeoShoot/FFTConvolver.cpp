@@ -32,8 +32,8 @@ void FFTConvolver::InitiateConvolver(
     NYfft_ = (int)(pow(2., floor(log(NY) / log(2.) + 0.99999)) + 0.00001);
     NZfft_ = (int)(pow(2., floor(log(NZ) / log(2.) + 0.99999)) + 0.00001);
 
-    Filter_ = compute::vector<float>(2 * NXfft_  * NYfft_ * NZfft_, Queue_.get_context());
-    Signal_ = compute::vector<float>(2 * NXfft_  * NYfft_ * NZfft_, Queue_.get_context());
+    Filter_ = compute::vector<float>(2 * NXfft_ * NYfft_ * NZfft_, Queue_.get_context());
+    Signal_ = compute::vector<float>(2 * NXfft_ * NYfft_ * NZfft_, Queue_.get_context());
 
     if (PlanHandle_)
         clfftDestroyPlan(&PlanHandle_);
@@ -231,8 +231,8 @@ void FFTConvolver::Convolution(GPUVectorField<3> & field) {
         copyKernel.set_arg(3, NXfft_ * NYfft_);
         copyKernel.set_arg(4, 0);
         copyKernel.set_arg(5, field.NX());
-        copyKernel.set_arg(6, field.NY() * field.NZ());
-        copyKernel.set_arg(7, field.NZ() * field.NY() * field.NZ());
+        copyKernel.set_arg(6, field.NX() * field.NY());
+        copyKernel.set_arg(7, field.NX() * field.NY() * field.NZ());
         copyKernel.set_arg(8, 0);
         copyKernel.set_arg(9, dir);
         copyKernel.set_arg(10, 2);

@@ -169,6 +169,7 @@ int Run(int argc, char ** argv) {
     gs.Weights = std::move(weights);
     gs.SigmaXs = std::move(sigmaXs);
     gs.SigmaYs = std::move(sigmaYs);
+    gs.SigmaZs = std::move(sigmaZs);
     gs.Alpha = alpha;
     gs.MaxUpdate = maxVeloUpdate;
 
