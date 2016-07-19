@@ -52,7 +52,7 @@ void usage() {
 int Run(int argc, char ** argv) {
     int N = 10;
     int nbIterations = 20;
-    std::string momentumPath, outputPath = "./", deviceName;;
+    std::string momentumPath, outputPath = "./", deviceName;
 
     if (argc < 3) {
         usage();
@@ -61,6 +61,7 @@ int Run(int argc, char ** argv) {
 
     auto image = ScalarField::Read({ argv[1] });
     auto target = ScalarField::Read({ argv[2] });
+
     argc -= 2;
     argv += 2;
 
@@ -68,10 +69,10 @@ int Run(int argc, char ** argv) {
     memset(&transfo[0], 0, 16 * sizeof(float));
     transfo[0][0] = transfo[1][1] = transfo[2][2] = transfo[3][3] = 1;
 
-    std::array<float, 7> weights = { 100.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f },
-        sigmaXs = { 3.f, 3.f, 3.f, 3.f, 3.f, 3.f, 3.f },
-        sigmaYs = { 3.f, 3.f, 3.f, 3.f, 3.f, 3.f, 3.f },
-        sigmaZs = { 3.f, 3.f, 3.f, 3.f, 3.f, 3.f, 3.f };
+    std::array<float, 7> weights = {{ 100.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f }},
+        sigmaXs = {{ 3.f, 3.f, 3.f, 3.f, 3.f, 3.f, 3.f }},
+        sigmaYs = {{ 3.f, 3.f, 3.f, 3.f, 3.f, 3.f, 3.f }},
+        sigmaZs = {{ 3.f, 3.f, 3.f, 3.f, 3.f, 3.f, 3.f }};
 
     float alpha = 0.001f, maxVeloUpdate = 0.5f;
 

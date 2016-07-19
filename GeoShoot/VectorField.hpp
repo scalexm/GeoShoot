@@ -24,7 +24,7 @@ struct CPUPolicy {
     using Container = std::vector<float>;
 
     template<class... Args>
-    static Container MakeContainer(const compute::context & ctx, Args && ... args) {
+    static Container MakeContainer(const compute::context &, Args && ... args) {
         return Container(std::forward<Args>(args)...);
     }
 };
@@ -127,8 +127,8 @@ public:
     }
 
     float MaxAbsVal(compute::command_queue & queue) const {
-        auto minmax = compute::minmax_element(Begin(), End(), compute::less<float>(), queue);
-        return std::max(fabs(*minmax.first), fabs(*minmax.second));
+        auto it = compute::minmax_element(Begin(), End(), compute::less<float>(), queue);
+        return std::max(fabs(it.first.read(queue)), fabs(it.second.read(queue)));
     }
 
     int NX() const { return NX_; }

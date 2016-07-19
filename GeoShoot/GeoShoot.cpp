@@ -263,7 +263,7 @@ void GeoShoot::ComputeGradient() {
 
 void GeoShoot::GradientDescent(int iterationsNumber, float gradientStep) {
     auto optimizedCost = Source_.MaxAbsVal(Queue_) + Target_.MaxAbsVal(Queue_);
-    optimizedCost *= NX_ * NY_ * NZ_;
+    optimizedCost *= optimizedCost * NX_ * NY_ * NZ_;
 
     auto currentCost = optimizedCost;
     auto localCounter = 0;
@@ -273,12 +273,16 @@ void GeoShoot::GradientDescent(int iterationsNumber, float gradientStep) {
         Shooting();
         ComputeGradient();
 
-        if (Cost_ < optimizedCost) {
-            optimizedCost = Cost_;
-            localCounter = 0;
+        if (Cost_ < currentCost) {
+            if (Cost_ < optimizedCost) {
+                std::cout << "Global cost decreasing" << std::endl;
+                optimizedCost = Cost_;
+                localCounter = 0;
+            }
         }
 
         if (Cost_ > currentCost) {
+            std::cout << "Global cost increasing" << std::endl;
             ++localCounter;
             if (localCounter == 2) {
                 gradientStep *= 0.8f;
@@ -300,13 +304,6 @@ void GeoShoot::GradientDescent(int iterationsNumber, float gradientStep) {
             -temp * gradientStep,
             Queue_
         );
-
-        /*if (i == 20) {
-            auto m = ScalarField { NX_, NY_, NZ_ };
-            compute::copy(InitialMomentum_.Begin(), InitialMomentum_.End(), m.Begin(), Queue_);
-            m.Write({"/Users/alexm/Desktop/lol2.nii"});
-            exit(0);
-        }*/
     }
 }
 

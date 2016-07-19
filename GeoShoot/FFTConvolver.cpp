@@ -73,7 +73,7 @@ namespace {
                 int x = get_global_id(0);
                 int y = get_global_id(1);
                 int z = get_global_id(2);
-                int ind = x + y * NX + z * NX * NZ;
+                int ind = x + y * NX + z * NX * NY;
 
                 if (x >= NX / 2)
                     x -= NX;
@@ -164,8 +164,7 @@ void FFTConvolver::MakeSumOf7AnisotropicGaussianFilters(
         NULL
     );
 
-    if (err != 0)
-        throw compute::opencl_error(err);
+    CHECK_ERROR(err);
 }
 
 namespace {

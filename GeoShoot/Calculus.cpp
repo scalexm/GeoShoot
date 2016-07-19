@@ -24,15 +24,12 @@ namespace {
 
                 int z_cond = (NZ != 1) && (z == 0 || z == NZ - 1);
                 if (x == 0 || y == 0 || x == NX - 1 || y == NY - 1 || z_cond) {
-                    grad[ind] = 0.f;
-                    grad[ind + NXtYtZ] = 0.f;
-                    grad[ind + 2 * NXtYtZ] = 0.f;
+                    grad[ind] = grad[ind + NXtYtZ] = grad[ind + 2 * NXtYtZ] = 0.f;
                 } else {
-                    float twoDelta = 2.f * deltaX;
-                    grad[ind] = (field[ind + 1] - field[ind - 1]) / twoDelta;
-                    grad[ind + NXtYtZ] = (field[ind + NX] - field[ind - NX]) / twoDelta;
+                    grad[ind] = (field[ind + 1] - field[ind - 1]) / 2.f;
+                    grad[ind + NXtYtZ] = (field[ind + NX] - field[ind - NX]) / 2.f;
                     if (NZ != 1)
-                        grad[ind + 2 * NXtYtZ] = (field[ind + NXtY] - field[ind - NXtY]) / twoDelta;
+                        grad[ind + 2 * NXtYtZ] = (field[ind + NXtY] - field[ind - NXtY]) / 2.f;
                     else
                         grad[ind + 2 * NXtYtZ] = 0.f;
                 }
@@ -557,7 +554,7 @@ namespace {
                 int xx = get_global_id(0);
                 int yy = get_global_id(1);
                 int zz = get_global_id(2);
-                int ind = xx + yy * NX + zz * NX * NZ;
+                int ind = xx + yy * NX + zz * NX * NY;
 
                 float xt = xx, yt = yy, zt = zz, x = xx, y = yy, z = zz;
                 x=xt*transfo[0]+yt*transfo[1]+zt*transfo[2]+transfo[3];

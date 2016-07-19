@@ -49,15 +49,15 @@ private:
     void GradientDescent(int, float);
 public:
     GeoShoot(const ScalarField & source, const ScalarField & target, const ScalarField & momentum,
-            const Matrix<4, 4> & transfo, int N, compute::command_queue queue);
+             const Matrix<4, 4> & transfo, int N, compute::command_queue queue);
 
     void Run(int iterationsNumber);
     void Save(std::string path);
 
-    std::array<float, 7> Weights = { 100.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f },
-        SigmaXs = { 3.f, 3.f, 3.f, 3.f, 3.f, 3.f, 3.f },
-        SigmaYs = { 3.f, 3.f, 3.f, 3.f, 3.f, 3.f, 3.f },
-        SigmaZs = { 3.f, 3.f, 3.f, 3.f, 3.f, 3.f, 3.f };
+    std::array<float, 7> Weights = {{ 100.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f }},
+        SigmaXs = {{ 3.f, 3.f, 3.f, 3.f, 3.f, 3.f, 3.f }},
+        SigmaYs = {{ 3.f, 3.f, 3.f, 3.f, 3.f, 3.f, 3.f }},
+        SigmaZs = {{ 3.f, 3.f, 3.f, 3.f, 3.f, 3.f, 3.f }};
 
     float Alpha = 0.001f, MaxUpdate = 0.5f;
 };
