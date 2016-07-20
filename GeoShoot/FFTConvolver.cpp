@@ -65,45 +65,6 @@ void FFTConvolver::ChangeKernel(
     MakeSumOf7AnisotropicGaussianFilters(weights, sigmaXs, sigmaYs, sigmaZs, true);
 }
 
-namespace {
-    compute::program & GaussianKernel() {
-        static std::string source = R"#(
-            __kernel void gaussian(__global float * data, int NX, int NY, int NZ,
-                                   float sigmaX, float sigmaY, float sigmaZ) {
-                int x = get_global_id(0);
-                int y = get_global_id(1);
-                int z = get_global_id(2);
-                int ind = x + y * NX + z * NX * NY;
-
-                if (x >= NX / 2)
-                    x -= NX;
-                if (y >= NY / 2)
-                    y -= NY;
-                if (z >= NZ / 2)
-                    z -= NZ;
-                data[ind] = exp(
-                    -x * x / (2. * sigmaX * sigmaX)
-                    -y * y / (2. * sigmaY * sigmaY)
-                    -z * z / (2. * sigmaZ * sigmaZ)
-                );
-            }
-        )#";
-
-        MAKE_PROGRAM(source, GetContext());
-    }
-
-    compute::program & AddKernel() {
-        static std::string source = R"#(
-            __kernel void add(__global float * filter, __global float * temp, float coeff) {
-                int ind = get_global_id(0);
-                filter[2 * ind] += temp[ind] * coeff;
-            }
-        )#";
-
-        MAKE_PROGRAM(source, GetContext());
-    }
-}
-
 void FFTConvolver::MakeSumOf7AnisotropicGaussianFilters(
     const std::array<float, 7> & weights,
     const std::array<float, 7> & sigmaXs,
@@ -115,14 +76,12 @@ void FFTConvolver::MakeSumOf7AnisotropicGaussianFilters(
     compute::vector<float> temp(Filter_.size() / 2, Queue_.get_context());
     compute::fill(Filter_.begin(), Filter_.end(), 0.f, Queue_);
 
-    auto gaussianKernel = GaussianKernel().create_kernel("gaussian");
+    auto gaussianKernel = GetProgram().create_kernel("gaussian");
     size_t workDim[3] = { (size_t) NXfft_, (size_t) NYfft_, (size_t) NZfft_ };
     gaussianKernel.set_arg(0, temp);
-    gaussianKernel.set_arg(1, NXfft_);
-    gaussianKernel.set_arg(2, NYfft_);
-    gaussianKernel.set_arg(3, NZfft_);
+    gaussianKernel.set_arg(1, Dims());
 
-    auto addKernel = AddKernel().create_kernel("add");
+    auto addKernel = GetProgram().create_kernel("addFFT");
     size_t addWorkDim[1] = { (size_t) NXfft_ * NYfft_ * NZfft_ };
     addKernel.set_arg(0, Filter_);
     addKernel.set_arg(1, temp);
@@ -131,9 +90,9 @@ void FFTConvolver::MakeSumOf7AnisotropicGaussianFilters(
     for (auto k = 0; k < 7; ++k) {
         sumWeight += weights[k];
         compute::fill(temp.begin(), temp.end(), 0.f, Queue_);
-        gaussianKernel.set_arg(4, sigmaXs[k]);
-        gaussianKernel.set_arg(5, sigmaYs[k]);
-        gaussianKernel.set_arg(6, sigmaZs[k]);
+        gaussianKernel.set_arg(2, sigmaXs[k]);
+        gaussianKernel.set_arg(3, sigmaYs[k]);
+        gaussianKernel.set_arg(4, sigmaZs[k]);
         Queue_.enqueue_nd_range_kernel(gaussianKernel, 3, NULL, workDim, NULL);
 
         auto sumLoc = 0.f;
@@ -167,44 +126,6 @@ void FFTConvolver::MakeSumOf7AnisotropicGaussianFilters(
     CHECK_ERROR(err);
 }
 
-namespace {
-    compute::program & CopyKernel() {
-        static std::string source = R"#(
-            __kernel void copy(__global float * out, __global const float * in,
-                               int NX_out, int NXtY_out, int NXtYtZ_out,
-                               int NX_in, int NXtY_in, int NXtYtZ_in,
-                               int dirOut, int dirIn,
-                               int strideOut, int strideIn) {
-                int x = get_global_id(0);
-                int y = get_global_id(1);
-                int z = get_global_id(2);
-                int indOut = x + y * NX_out + z * NXtY_out + dirOut * NXtYtZ_out;
-                int indIn = x + y * NX_in + z * NXtY_in + dirIn * NXtYtZ_in;
-                out[strideOut * indOut] = in[strideIn * indIn];
-            }
-        )#";
-
-        MAKE_PROGRAM(source, GetContext());
-    }
-
-    compute::program & FilterKernel() {
-        static std::string source = R"#(
-            __kernel void filter(__global float * signal, __global const float * filter) {
-                int ind = 2 * get_global_id(0);
-                float a = signal[ind];
-                float b = signal[ind + 1];
-                float c = filter[ind];
-                float d = filter[ind + 1];
-
-                signal[ind] = a * c - b * d;
-                signal[ind + 1] = c * b + a * d;
-            }
-        )#";
-
-        MAKE_PROGRAM(source, GetContext());
-    }
-}
-
 void FFTConvolver::Convolution(GPUVectorField<3> & field) {
     assert(field.NX() <= NXfft_);
     assert(field.NY() <= NYfft_);
@@ -212,10 +133,10 @@ void FFTConvolver::Convolution(GPUVectorField<3> & field) {
 
     // copy between field and Signal_ (a signal which will be processed by clFFT), complying
     // with clFFT complex interleaved layout
-    auto copyKernel = CopyKernel().create_kernel("copy");
+    auto copyKernel = GetProgram().create_kernel("copyFFT");
     size_t workDim[3] = { (size_t) field.NX(), (size_t) field.NY(), (size_t) field.NZ() };
 
-    auto filterKernel = FilterKernel().create_kernel("filter");
+    auto filterKernel = GetProgram().create_kernel("filter");
     size_t filterWorkDim[1] = { (size_t) NXfft_ * NYfft_ * NZfft_ };
     filterKernel.set_arg(0, Signal_);
     filterKernel.set_arg(1, Filter_);

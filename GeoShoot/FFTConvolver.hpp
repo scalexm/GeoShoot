@@ -30,6 +30,10 @@ private:
         bool normalizeWeights = true
     );
 
+    compute::int4_ Dims() const {
+        return { NXfft_, NYfft_, NZfft_, 0 };
+    }
+
 public:
     FFTConvolver(compute::command_queue);
     FFTConvolver(const FFTConvolver &) = delete;

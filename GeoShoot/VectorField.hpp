@@ -131,9 +131,21 @@ public:
         return std::max(fabs(it.first.read(queue)), fabs(it.second.read(queue)));
     }
 
-    int NX() const { return NX_; }
-    int NY() const { return NY_; }
-    int NZ() const { return NZ_; }
+    int NX() const {
+        return NX_;
+    }
+
+    int NY() const {
+        return NY_;
+    }
+
+    int NZ() const {
+        return NZ_;
+    }
+
+    compute::int4_ Dims() const {
+        return { NX_, NY_, NZ_, 0 };
+    }
 
     Iterator Begin() {
         return VecField_.begin();

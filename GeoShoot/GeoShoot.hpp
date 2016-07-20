@@ -20,7 +20,7 @@ private:
 
     compute::command_queue Queue_;
     FFTConvolver Convolver_;
-    float DeltaX_ = 1.f, DeltaT_, Cost_, Energy_, Xmm_, Ymm_, Zmm_;
+    float DeltaT_, Cost_, Energy_, Xmm_, Ymm_, Zmm_;
 
     int N_;
     int NX_, NY_, NZ_;
@@ -40,6 +40,10 @@ private:
     template<class T>
     void Deallocate(T & field) {
         field = T { };
+    }
+
+    compute::int4_ Dims() const {
+        return { NX_, NY_, NZ_, 0 };
     }
 
     void ReInitiateConvolver_HomoAppaWeights();

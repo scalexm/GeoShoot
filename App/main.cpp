@@ -49,6 +49,8 @@ void usage() {
   std::cerr << "    <-ShowDevices>              Show available devices and exit\n";
 }
 
+void Compare(const std::string & p1, const std::string & p2);
+
 int Run(int argc, char ** argv) {
     int N = 10;
     int nbIterations = 20;
@@ -164,6 +166,7 @@ int Run(int argc, char ** argv) {
 
     std::cout << "OpenCL will use " << GetDevice().name() << std::endl;
     compute::command_queue queue { GetContext(), GetDevice() };
+    SetSourcePath("/Users/alexm/Desktop/GeoShoot/GeoShoot/OpenCL.cl");
 
     GeoShoot gs { std::move(image), std::move(target), std::move(momentum), transfo, N, queue };
 

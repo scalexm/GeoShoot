@@ -15,10 +15,10 @@ template<size_t Row, size_t Col>
 using Matrix = std::array<std::array<float, Col>, Row>;
 
 void ComputeGradScalarField(const GPUScalarField & field, GPUVectorField<3> & gradient,
-                            float deltaX, compute::command_queue & queue);
+                            compute::command_queue & queue);
 
 void ComputeDivVectorField(const GPUVectorField<3> & field, GPUScalarField & div,
-                           float deltaX, compute::command_queue & queue);
+                           compute::command_queue & queue);
 
 // cannot be used in place
 void TransportImage(const GPUScalarField & src, const GPUVectorField<3> & diffeo,
@@ -26,14 +26,14 @@ void TransportImage(const GPUScalarField & src, const GPUVectorField<3> & diffeo
 
 // cannot be used in place
 void TransportMomentum(const GPUScalarField & src, const GPUVectorField<3> & diffeo,
-                       GPUScalarField & dst, float deltaX, compute::command_queue & queue);
+                       GPUScalarField & dst, compute::command_queue & queue);
 
 void UpdateDiffeo(const GPUVectorField<3> & velocity, GPUVectorField<3> & diffeo, float deltaT,
                   compute::command_queue & queue);
 
 // needs an accumulator
 void UpdateInvDiffeo(const GPUVectorField<3> & velocity, GPUVectorField<3> & diffeo,
-                     GPUVectorField<3> & accumulator, float deltaT, float deltaX,
+                     GPUVectorField<3> & accumulator, float deltaT,
                      compute::command_queue & queue);
 
 // can be used in place

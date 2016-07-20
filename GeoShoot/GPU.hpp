@@ -17,15 +17,7 @@ namespace compute = boost::compute;
 compute::context & GetContext();
 compute::device & GetDevice();
 void SetDevice(const compute::device &);
-
-#define MAKE_PROGRAM(source, context) \
-    static compute::program prog; \
-    static bool built = false; \
-    if (!built) { \
-        prog = compute::program::create_with_source(source, context); \
-        prog.build(); \
-        built = true; \
-    } \
-    return prog;
+void SetSourcePath(std::string);
+compute::program & GetProgram();
 
 #endif

@@ -19,7 +19,7 @@
 GeoShoot::GeoShoot(const ScalarField & source, const ScalarField & target,
                    const ScalarField & momentum, const Matrix<4, 4> & transfo, int N,
                    compute::command_queue queue)
-                   : N_ { std::max(1, N) },
+                   : N_ { std::max(2, N) },
                      Queue_ { queue },
                      Convolver_ { queue } {
     if (source.NX() != momentum.NX()
@@ -57,7 +57,7 @@ GeoShoot::GeoShoot(const ScalarField & source, const ScalarField & target,
 
     compute::copy(source.Begin(), source.End(), Source_.Begin(), Queue_);
     compute::copy(momentum.Begin(), momentum.End(), InitialMomentum_.Begin(), Queue_);
-    compute::copy(target.Begin(), target.End(), Scalar1_.Begin(), Queue_);
+    compute::copy(target.Begin(), target.End(), Scalar1_ .Begin(), Queue_);
 
     auto template2TargetCoord = Invert4t4Quaternion(transfo);
     template2TargetCoord = Mult4t4Quaternion(template2TargetCoord, source.Image2World());
@@ -85,32 +85,12 @@ GeoShoot::GeoShoot(const ScalarField & source, const ScalarField & target,
                   << " and this is not the case here!" << std::endl;
     }
 
-    DiffeoTimeLine_.resize(N_);
-    InvDiffeoTimeLine_.resize(N_);
+    DiffeoTimeLine_.resize(N_ - 1);
+    InvDiffeoTimeLine_.resize(N_ - 1);
 
-    for (auto n = 0; n < N_; ++n) {
+    for (auto n = 0; n < N_ - 1; ++n) {
         Allocate(DiffeoTimeLine_[n]);
         Allocate(InvDiffeoTimeLine_[n]);
-    }
-}
-
-namespace {
-    compute::program & DiffeoKernel() {
-        static std::string source = R"#(
-            __kernel void diffeo(__global float * diffeo,
-                                   int NX, int NXtY, int NXtYtZ) {
-                int x = get_global_id(0);
-                int y = get_global_id(1);
-                int z = get_global_id(2);
-                int ind = x + y * NX + z * NXtY;
-
-                diffeo[ind] = x;
-                diffeo[ind + NXtYtZ] = y;
-                diffeo[ind + 2 * NXtYtZ] = z;
-            }
-        )#";
-
-        MAKE_PROGRAM(source, GetContext());
     }
 }
 
@@ -118,18 +98,36 @@ void GeoShoot::Shooting() {
     Cost_ = Energy_ = 0.f;
 
     // init phi(0) = identity
-    auto diffeoKernel = DiffeoKernel().create_kernel("diffeo");
+    auto diffeoKernel = GetProgram().create_kernel("initDiffeo");
     size_t workDim[3] = { (size_t) NX_, (size_t) NY_, (size_t) NZ_ };
     diffeoKernel.set_arg(0, Vector1_.Buffer());
-    diffeoKernel.set_arg(1, NX_);
-    diffeoKernel.set_arg(2, NX_ * NY_);
-    diffeoKernel.set_arg(3, NX_ * NY_ * NZ_);
+    diffeoKernel.set_arg(1, Dims());
     Queue_.enqueue_nd_range_kernel(diffeoKernel, 3, NULL, workDim, NULL); // Vector1_ <- phi(0)
 
     compute::copy(Vector1_.Begin(), Vector1_.End(), Vector2_.Begin(), Queue_); // Vector2_ <- phi^{-1}(0)
 
-    // at iteration tau: Vector1_ == phi(tau), Vector2_ == phi^{-1}(tau)
-    for (auto tau = 0; tau < N_; ++tau) {
+    // end of iteration tau: Vector1_ == phi(tau + 1), Vector2_ == phi^{-1}(tau + 1)
+    for (auto tau = 0; tau < N_ - 1; ++tau) {
+        TransportImage(Source_, Vector2_, Scalar1_, Queue_); // Scalar1_ <- I(tau)
+        ComputeGradScalarField(Scalar1_, Vector4_, Queue_); // Vector4_ <- nabla(I)
+
+        TransportMomentum(InitialMomentum_, Vector2_, Scalar1_, Queue_); // Scalar1_ <- P(tau)
+
+        ScalarFieldTimesVectorField(Scalar1_, Vector4_, Vector3_, -1.f, Queue_); // Vector3_ <- -P(tau) x nabla(I)
+        Convolver_.Convolution(Vector3_); // Vector3_ <- -K (*) [P(tau) x nabla(I)] = v(tau)
+
+        if (tau == 0) { // init GradientMomentum_
+            ScalarProduct(Vector4_, Vector3_, GradientMomentum_, -Alpha, Queue_);
+            Energy_ +=
+                0.5 * DotProduct(GradientMomentum_, InitialMomentum_, Scalar1_, Queue_);
+            std::cout << "Energy of the vector field: " << Energy_ << "\n";
+        }
+
+        UpdateDiffeo(Vector3_, Vector1_, DeltaT_, Queue_); // Vector1_ <- phi(tau + 1)
+
+        // (Vector4_ is used by UpdateInvDiffeo as a temporary copy of Vector2_)
+        UpdateInvDiffeo(Vector3_, Vector2_, Vector4_, DeltaT_, Queue_); // Vector2_ <- phi(tau + 1)
+
         compute::copy(
             Vector1_.Begin(),
             Vector1_.End(),
@@ -143,76 +141,74 @@ void GeoShoot::Shooting() {
             InvDiffeoTimeLine_[tau].Begin(),
             Queue_
         );
-
-        if (tau != 0 && tau == N_ - 1) // tau = 0 needed at least for init GPUGradientMomentum_ (corner case, yes)
-            break;
-
-        TransportImage(Source_, Vector2_, Scalar1_, Queue_); // Scalar1_ <- I(tau)
-        ComputeGradScalarField(Scalar1_, Vector4_, DeltaX_, Queue_); // Vector4_ <- nabla(I)
-
-        TransportMomentum(InitialMomentum_, Vector2_, Scalar1_, DeltaX_, Queue_); // Scalar1_ <- P(tau)
-
-        ScalarFieldTimesVectorField(Scalar1_, Vector4_, Vector3_, -1.f, Queue_); // Vector3_ <- -P(tau) x nabla(I)
-        Convolver_.Convolution(Vector3_); // Vector3_ <- -K (*) [P(tau) x nabla(I)] = v(tau)
-
-        if (tau == 0) { // init GradientMomentum_
-            ScalarProduct(Vector4_, Vector3_, GradientMomentum_, -Alpha, Queue_);
-            Energy_ +=
-                0.5 * DotProduct(GradientMomentum_, InitialMomentum_, Scalar1_, Queue_);
-            std::cout << "Energy of the vector field: " << Energy_ << "\n";
-
-            if (N_ == 1)
-                break;
-        }
-
-        UpdateDiffeo(Vector3_, Vector1_, DeltaT_, Queue_); // Vector1_ <- phi(tau + 1)
-
-        // (Vector4_ is used by UpdateInvDiffeo as a temporary copy of Vector2_)
-        UpdateInvDiffeo(Vector3_, Vector2_, Vector4_, DeltaT_, DeltaX_, Queue_); // Vector2_ <- phi(tau + 1)
     }
 }
 
-void GeoShoot::ComputeGradient() {
-    TransportImage(Source_, Vector2_, Scalar3_, Queue_); // Scalar3_ <- I(1) (Vector2_ still contains phi^{-1}(1))
-
+float SimilarityMeasure(const GPUScalarField & I, const GPUScalarField & J,
+                       const GPUScalarField & acc, compute::command_queue & queue) {
     using compute::lambda::get;
     using compute::_1;
 
     compute::for_each(
         compute::make_zip_iterator(
-            boost::make_tuple(Scalar3_.Begin(), Target_.Begin(), Scalar1_.Begin())
+            boost::make_tuple(I.Begin(), J.Begin(), acc.Begin())
         ),
         compute::make_zip_iterator(
-            boost::make_tuple(Scalar3_.End(), Target_.End(), Scalar1_.End())
+            boost::make_tuple(I.End(), J.End(), acc.End())
         ),
         get<2>(_1) = pow(get<0>(_1) - get<1>(_1), 2),
-        Queue_
+        queue
     );
 
     auto similarityMeasure = 0.f;
     compute::reduce(
-        Scalar1_.Begin(),
-        Scalar1_.End(),
+        acc.Begin(),
+        acc.End(),
         &similarityMeasure,
         compute::plus<float>(),
-        Queue_
+        queue
     );
 
-    Cost_ += similarityMeasure * 0.5f;
+    return 0.5f * similarityMeasure;
+}
+
+/*void Compare(const std::string & p1, const std::string & p2) {
+    auto i = ScalarField::Read({p1.c_str()});
+    auto j = ScalarField::Read({p2.c_str()});
+    assert(i.NX() == j.NX() && i.NY() == j.NY() && i.NZ() == j.NZ());
+
+    auto dev = compute::system::default_device();
+    compute::context ctx { dev };
+    compute::command_queue q { ctx, dev };
+
+    auto I = GPUScalarField { i.NX(), i.NY(), i.NZ(), ctx };
+    compute::copy(i.Begin(), i.End(), I.Begin(), q);
+
+    auto J = GPUScalarField { j.NX(), j.NY(), j.NZ(), ctx };
+    compute::copy(j.Begin(), j.End(), J.Begin(), q);
+
+    auto acc = GPUScalarField{ j.NX(), j.NY(), j.NZ(), ctx };
+    std::cout << SimilarityMeasure(I, J, acc, q) << std::endl;;
+}*/
+
+void GeoShoot::ComputeGradient() {
+    TransportImage(Source_, Vector2_, Scalar3_, Queue_); // Scalar3_ <- I(1) (Vector2_ still contains phi^{-1}(1))
+
+    Cost_ += SimilarityMeasure(Scalar3_, Target_, Scalar1_, Queue_);
     std::cout << "Similarity measure: " << Cost_ << "\n";
 
     Cost_ += Energy_;
     std::cout << "Global cost: " << Cost_ << "\n";
 
     AddFields(Target_, Scalar3_, Scalar4_, -1.f, Queue_); // Scalar4_ <- J - I(1) = \hat{I}(1)
-    TransportMomentum(Scalar4_, Vector1_, Scalar1_, DeltaX_, Queue_); // Scalar1_ <- \tilde{I}(1) (Vector1_ still conntains phi(1))
+    TransportMomentum(Scalar4_, Vector1_, Scalar1_, Queue_); // Scalar1_ <- \tilde{I}(1) (Vector1_ still contains phi(1))
 
     Scalar2_.Fill(0.f, Queue_); // Scalar2_ <- \tilde{P}(1) = 0
 
     // at iteration tau: Scalar1_ == \tilde{I}(tau), Scalar2_ == \tilde{P}(tau)
-    for (auto tau = N_ - 1; tau > 0; --tau) {
-        if (tau != N_ - 1) {
-            // at tau = N_ - 1 we have just called Shoot(), so Vector1_ still contains phi(1)
+    for (auto tau = N_ - 2; tau >= 0; --tau) {
+        if (tau != N_ - 2) {
+            // at tau = N_ - 2 we have just called Shoot(), so Vector1_ still contains phi(1)
             compute::copy(
                 DiffeoTimeLine_[tau].Begin(),
                 DiffeoTimeLine_[tau].End(),
@@ -228,29 +224,32 @@ void GeoShoot::ComputeGradient() {
                 Queue_
             );
 
-            // at tau = N_ - 1, Scalar3_ already contains I(1)
+            // at tau = N_ - 2, Scalar3_ already contains I(1)
             TransportImage(Source_, Vector2_, Scalar3_, Queue_); // Scalar3_ <- I(tau)
 
-            // at tau = N - 1, Scalar4_ already contains \hat{I}(1)
-            TransportMomentum(Scalar1_, Vector2_, Scalar4_, DeltaX_, Queue_); // Scalar4_ <- \hat{I}(tau)
+            // at tau = N_ - 2, Scalar4_ already contains \hat{I}(1)
         }
+        
+        TransportMomentum(Scalar1_, Vector2_, Scalar4_, Queue_); // Scalar4_ <- \hat{I}(tau)
 
-        TransportMomentum(Scalar2_, Vector2_, Scalar5_, DeltaX_, Queue_); // Scalar5_ <- \hat{P}(tau)
+        TransportImage(Scalar2_, Vector2_, Scalar5_, Queue_); // Scalar5_ <- \hat{P}(tau)
 
-        ComputeGradScalarField(Scalar3_, Vector3_, DeltaX_, Queue_); // Vector3_ <- nabla(I)
+        ComputeGradScalarField(Scalar3_, Vector3_, Queue_); // Vector3_ <- nabla(I)
 
-        TransportMomentum(InitialMomentum_, Vector2_, Scalar3_, DeltaX_, Queue_); // Scalar3_ <- P(tau)
+        TransportMomentum(InitialMomentum_, Vector2_, Scalar3_, Queue_); // Scalar3_ <- P(tau)
 
         /* compute adjoint velocity */
-        ComputeGradScalarField(Scalar5_, Vector2_, DeltaX_, Queue_); // Vector2_ <- nabla(\hat{P}) (we don't use phi^{-1} anymore so we can overwrite Vector2_)
+        ComputeGradScalarField(Scalar5_, Vector2_, Queue_); // Vector2_ <- nabla(\hat{P}) (we don't use phi^{-1} anymore so we can overwrite Vector2_)
         ScalarFieldTimesVectorField(Scalar3_, Vector2_, Vector2_, 1.f, Queue_); // Vector2_ <- P x nabla(\hat{P})
         ScalarFieldTimesVectorField(Scalar4_, Vector3_, Vector4_, 1.f, Queue_); // Vector4_ <- \hat{I} x nabla(I)
         AddFields(Vector2_, Vector4_, Vector2_, -1.f, Queue_); // Vector2_ <- P x nabla(\hat{P}) - \hat{I} x nabla(I)
+
         Convolver_.Convolution(Vector2_); // Vector2_ <- \hat{v}
 
         ScalarFieldTimesVectorField(Scalar3_, Vector2_, Vector4_, 1.f, Queue_); // Vector4_ <- P x \hat{v}
-        ComputeDivVectorField(Vector4_, Scalar4_, DeltaX_, Queue_); // Scalar4_ <- div(P x \hat{v})
-        TransportMomentum(Scalar4_, Vector1_, Scalar3_, DeltaX_, Queue_); // Scalar3_ <- Jac(phi) div(P x \hat{v}) o phi
+        ComputeDivVectorField(Vector4_, Scalar4_, Queue_); // Scalar4_ <- div(P x \hat{v})
+
+        TransportMomentum(Scalar4_, Vector1_, Scalar3_, Queue_); // Scalar3_ <- Jac(phi) div(P x \hat{v}) o phi
         AddFields(Scalar1_, Scalar3_, Scalar1_, DeltaT_, Queue_); // Scalar1_ <- \tilde{I}(tau - 1)
 
         ScalarProduct(Vector3_, Vector2_, Scalar3_, 1.f, Queue_); // Scalar3_ <- nabla(I) . \hat{v}
@@ -291,7 +290,7 @@ void GeoShoot::GradientDescent(int iterationsNumber, float gradientStep) {
         }
 
         currentCost = Cost_;
-        ComputeGradScalarField(Source_, Vector1_, DeltaX_, Queue_);
+        ComputeGradScalarField(Source_, Vector1_, Queue_);
         ScalarFieldTimesVectorField(GradientMomentum_, Vector1_, Vector1_, -1.f, Queue_);
         Convolver_.Convolution(Vector1_);
 
@@ -362,40 +361,16 @@ void GeoShoot::Save(std::string path) {
     final.Write({ finalPath.c_str() });
 }
 
-namespace {
-    compute::program & MaxGradKernel() {
-        static std::string source = R"#(
-            __kernel void maxGrad(__global float * dst, __global const float * field,
-                                  int NX, int NY, int NZ) {
-                int x = get_global_id(0);
-                int y = get_global_id(1);
-                int z = get_global_id(2);
-                int NXtY = NX * NY;
-                int NXtYtZ = NXtY * NZ;
-                int ind = x + y * NX + z * NXtY;
-
-                dst[ind] = 2.f * sqrt(field[ind] * field[ind]
-                    + field[ind + NXtYtZ] * field[ind + NXtYtZ]
-                    + field[ind + 2 * NXtYtZ] * field[ind + 2 * NXtYtZ]);
-            }
-        )#";
-
-        MAKE_PROGRAM(source, GetContext());
-    }
-}
-
 void GeoShoot::ReInitiateConvolver_HomoAppaWeights() {
-    ComputeGradScalarField(Target_, Vector1_, DeltaX_, Queue_);
+    ComputeGradScalarField(Target_, Vector1_, Queue_);
 
     float realW1;
 
-    auto kernel = MaxGradKernel().create_kernel("maxGrad");
+    auto kernel = GetProgram().create_kernel("maxGrad");
     size_t workDim[3] = { (size_t) NX_, (size_t) NY_, (size_t) NZ_ };
     kernel.set_arg(0, Scalar1_.Buffer());
     kernel.set_arg(1, Vector2_.Buffer());
-    kernel.set_arg(2, NX_);
-    kernel.set_arg(3, NY_);
-    kernel.set_arg(4, NZ_);
+    kernel.set_arg(2, Dims());
 
     for (auto i = 0; i < 7; ++i) {
         Convolver_.ChangeKernel(

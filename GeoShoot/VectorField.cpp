@@ -50,7 +50,7 @@ ScalarField ScalarField::Read(const std::array<const char *, 1> & path) {
         field.Image2World_[3][3] = 1;
     } else if (hdr.qform_code > 0) {
         auto b = hdr.quatern_b, c = hdr.quatern_c, d = hdr.quatern_d;
-        auto a = std::sqrtf(1. - (b * b + c * c + d * d));
+        auto a = sqrt(1.f - (b * b + c * c + d * d));
         auto qfac = hdr.pixdim[0] == -1. ? -1 : 1;
 
         field.Image2World_[0][0] = hdr.pixdim[1] * (a * a + b * b - c * c - d * d);
