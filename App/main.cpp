@@ -26,11 +26,10 @@ void usage() {
   std::cerr << "    <-M_Gauss_easier n>         Sum of 7 linearly sampled Gaussian kernels with apparent weights = 1    --- n = Smax Smin  (S. in mm)\n" ;
   std::cerr << "  Inputs (default: nothing):\n";
   std::cerr << "    <-InputInitMomentum n>      Initial Momentum to initiate the gradient descent (default=\"Null\")\n";
-  //cerr << "    <-InputIniMoTxt n>          Initial Momentum in an ascii file (instead of nifti) (default=\"Null\")\n";
   std::cerr << "    <-affineT n>                Affine transfo from Trg to Template in the world domain. The 4*3 parameters are: r_xx r_xy r_xz t_x  r_yx ... t_z\n";
   //cerr << "    <-affineT_txt n>            Affine transfo from Trg to Template in the world domain. The 4*4 matrix is an ascii text file.\n";
   std::cerr << "  Outputs (default: initial momentum in a nifti file):\n";
-  std::cerr << "    <-OutputPath n>             Output directory (default = .)";
+  std::cerr << "    <-OutputPath n>             Output directory (default = \".\")";
   //cerr << "    <-OutFinalDef>              Outputs the deformed template (Nothing by default)\n";
   //cerr << "    <-OutDispField>             Outputs the displacement field in mm (Nothing by default)\n";
   //cerr << "    <-OutDispFieldEvo>          Outputs the evolution of the displacement field in mm along the diffeomorphism (Nothing by default)\n";
@@ -47,14 +46,15 @@ void usage() {
   std::cerr << "  GPU options:\n";
   std::cerr << "    <-Device n>                 Name of the device used for computations\n";
   std::cerr << "    <-ShowDevices>              Show available devices and exit\n";
+  std::cerr << "    <-KernelSource n>           Path for the OpenCL kernels source (default=\"./OpenCL.cl\")\n";
 }
 
 void Compare(const std::string & p1, const std::string & p2);
 
 int Run(int argc, char ** argv) {
     int N = 10;
-    int nbIterations = 20;
-    std::string momentumPath, outputPath = "./", deviceName;
+    int nbIterations = 10;
+    std::string momentumPath, outputPath = "./", deviceName, sourcePath = "./OpenCL.cl";
 
     if (argc < 3) {
         usage();
@@ -145,6 +145,9 @@ int Run(int argc, char ** argv) {
         } else if (arg == "-MaxVeloUpdate" && argc > 1) {
             maxVeloUpdate = atof(argv[1]);
             --argc; ++argv;
+        } else if (arg == "-KernelSource" && argc > 1) {
+            sourcePath = argv[1];
+            --argc; ++argv;
         } else {
             usage();
             return 1;
@@ -166,7 +169,7 @@ int Run(int argc, char ** argv) {
 
     std::cout << "OpenCL will use " << GetDevice().name() << std::endl;
     compute::command_queue queue { GetContext(), GetDevice() };
-    SetSourcePath("/Users/alexm/Desktop/GeoShoot/GeoShoot/OpenCL.cl");
+    SetSourcePath(std::move(sourcePath));
 
     GeoShoot gs { std::move(image), std::move(target), std::move(momentum), transfo, N, queue };
 
