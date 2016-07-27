@@ -132,9 +132,8 @@ int Run(int argc, char ** argv) {
             argc -= 2;
             argv += 2;
 
-            if (sigmaXs[0] < sigmaXs[6]) {
+            if (sigmaXs[0] < sigmaXs[6])
                 std::swap(sigmaXs[0], sigmaXs[6]);
-            }
 
             sigmaYs[0] = sigmaZs[0] = sigmaXs[0];
             sigmaYs[6] = sigmaZs[6] = sigmaXs[6];
