@@ -3,8 +3,8 @@
  Matrix.hpp
  GeoShoot
 
- Author: Alexandre Martin
- Copyright © 2016 scalexm. All rights reserved.
+ Author: Alexandre Martin, Laurent Risser
+ Copyright © 2016 scalexm, lrisser. All rights reserved.
  
  Disclaimer: This software has been developed for research purposes only, and hence should 
  not be used as a diagnostic tool. In no event shall the authors or distributors
