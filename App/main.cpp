@@ -1,10 +1,19 @@
-//
-//  main.cpp
-//  App
-//
-//  Created by Alexandre Martin on 21/06/2016.
-//  Copyright © 2016 scalexm. All rights reserved.
-//
+/*=========================================================================
+ 
+ main.cpp
+ App
+
+ Author: Alexandre Martin
+ Copyright © 2016 scalexm. All rights reserved.
+ 
+ Disclaimer: This software has been developed for research purposes only, and hence should 
+ not be used as a diagnostic tool. In no event shall the authors or distributors
+ be liable to any direct, indirect, special, incidental, or consequential 
+ damages arising of the use of this software, its documentation, or any 
+ derivatives thereof, even if the authors have been advised of the possibility 
+ of such damage. 
+
+ =========================================================================*/
 
 #include <iostream>
 #include <chrono>
@@ -48,8 +57,6 @@ void usage() {
   std::cerr << "    <-ShowDevices>              Show available devices and exit\n";
   std::cerr << "    <-KernelSource n>           Path for the OpenCL kernels source (default=\"./OpenCL.cl\")\n";
 }
-
-void Compare(const std::string & p1, const std::string & p2);
 
 int Run(int argc, char ** argv) {
     int N = 10;

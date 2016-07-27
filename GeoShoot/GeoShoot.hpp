@@ -1,10 +1,19 @@
-//
-//  GeoShoot.hpp
-//  GeoShoot
-//
-//  Created by Alexandre Martin on 24/06/2016.
-//  Copyright © 2016 scalexm. All rights reserved.
-//
+/*=========================================================================
+ 
+ GeoShoot.hpp
+ GeoShoot
+
+ Author: Alexandre Martin
+ Copyright © 2016 scalexm. All rights reserved.
+ 
+ Disclaimer: This software has been developed for research purposes only, and hence should 
+ not be used as a diagnostic tool. In no event shall the authors or distributors
+ be liable to any direct, indirect, special, incidental, or consequential 
+ damages arising of the use of this software, its documentation, or any 
+ derivatives thereof, even if the authors have been advised of the possibility 
+ of such damage. 
+
+ =========================================================================*/
 
 #ifndef GEO_SHOOT_HPP
 #define GEO_SHOOT_HPP
