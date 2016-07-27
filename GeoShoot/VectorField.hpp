@@ -48,7 +48,9 @@ private:
     int NXtY_ = 0, NXtYtZ_ = 0;
     Matrix<4, 4> Image2World_, World2Image_;
 
-    typename DevicePolicy::Container VecField_;
+    size_t Channel_ = 0;
+
+    std::vector<typename DevicePolicy::Container> VecField_;
 
     template<size_t Direction>
     size_t Index(int x, int y, int z) const {
@@ -61,11 +63,13 @@ public:
 
     GenericVectorField() = default;
 
-    GenericVectorField(int NX, int NY, int NZ,
+    GenericVectorField(int NX, int NY, int NZ, int NT = 1,
                        const compute::context & ctx = compute::system::default_context())
                        : NX_ { NX }, NY_ { NY }, NZ_ { NZ },
                          NXtY_ { NX * NY }, NXtYtZ_ { NX * NY * NZ },
-                         VecField_ { DevicePolicy::MakeContainer(ctx, Dim * NX * NY * NZ) } {
+                         VecField_(NT) {
+        for (auto t = 0; t < NT; ++t)
+            VecField_[t] = DevicePolicy::MakeContainer(ctx, Dim * NX * NY * NZ);
 
         memset(&Image2World_[0], 0, 16 * sizeof(float));
         Image2World_[0][0] = Image2World_[1][1] = Image2World_[2][2] = Image2World_[3][3] = 1;
@@ -80,29 +84,29 @@ public:
         return World2Image_;
     }
 
-    size_t FlatSize() const {
-        return VecField_.size();
+    void ChangeChannel(size_t c) {
+        Channel_ = c;
     }
 
     // emplace a vector at point (x, y, z)
     void P(std::array<float, Dim> values, int x, int y, int z) {
         auto index = Index<0>(x, y, z);
         for (auto dir = 0; dir < Dim; ++dir)
-            VecField_[dir * NXtYtZ_ + index] = values[dir];
+            VecField_[Channel_][dir * NXtYtZ_ + index] = values[dir];
     }
 
     // add a vector at point (x, y, z)
     void Add(std::array<float, Dim> values, int x, int y, int z) {
         auto index = Index<0>(x, y, z);
         for (auto dir = 0; dir < Dim; ++dir)
-            VecField_[dir * NXtYtZ_ + index] += values[dir];
+            VecField_[Channel_][dir * NXtYtZ_ + index] += values[dir];
     }
 
     // get value at point (x, y, z) and at direction Direction
     template<size_t Direction>
     float G(int x, int y, int z) const {
         static_assert(Direction < Dim, "Direction should be less than Dim");
-        return VecField_[Index<Direction>(x, y, z)];
+        return VecField_[Channel_][Index<Direction>(x, y, z)];
     }
 
     // set all voxels to value given by cst
@@ -143,32 +147,36 @@ public:
         return NZ_;
     }
 
+    int NT() const {
+        return VecField_.size();
+    }
+
     compute::int4_ Dims() const {
         return { NX_, NY_, NZ_, 0 };
     }
 
     Iterator Begin() {
-        return VecField_.begin();
+        return VecField_[Channel_].begin();
     }
 
     ConstIterator Begin() const {
-        return VecField_.begin();
+        return VecField_[Channel_].begin();
     }
 
     Iterator End() {
-        return VecField_.end();
+        return VecField_[Channel_].end();
     }
 
     ConstIterator End() const {
-        return VecField_.end();
+        return VecField_[Channel_].end();
     }
 
     typename DevicePolicy::Container & Buffer() {
-        return VecField_;
+        return VecField_[Channel_];
     }
 
     const typename DevicePolicy::Container & Buffer() const {
-        return VecField_;
+        return VecField_[Channel_];
     }
 
     /* not perfect regarding memory efficiency, should be rewritten if needed */
@@ -189,27 +197,38 @@ public:
             }
 
             if (dim == 0) {
-                field = GenericVectorField<Dim, DevicePolicy> { dir.NX(), dir.NY(), dir.NZ() };
+                field = GenericVectorField<Dim, DevicePolicy> {
+                    dir.NX(),
+                    dir.NY(),
+                    dir.NZ(),
+                    dir.NT()
+                };
                 field.Image2World_ = std::move(dir.Image2World_);
                 field.World2Image_ = std::move(dir.World2Image_);
             }
 
-            std::copy(dir.Begin(), dir.End(), &field.VecField_[dim * field.NXtYtZ_]);
+            for (auto t = 0; t < dir.NT(); ++t) {
+                dir.ChangeChannel(t);
+                std::copy(dir.Begin(), dir.End(), &field.VecField_[t][dim * field.NXtYtZ_]);
+            }
         }
 
         return field;
     }
 
-
     void Write(const std::array<const char *, Dim> & paths) const {
         static_assert(std::is_same<DevicePolicy, CPUPolicy>::value, "only on CPU");
         for (auto dim = 0; dim < Dim; ++dim) {
-            GenericVectorField<1, CPUPolicy> dir { NX_, NY_, NZ_ };
-            std::copy(
-                &VecField_[dim * NXtYtZ_],
-                &VecField_[dim * NXtYtZ_] + NXtYtZ_,
-                dir.Begin()
-            );
+            GenericVectorField<1, CPUPolicy> dir { NX_, NY_, NZ_, NT() };
+
+            for (auto t = 0; t < NT(); ++t) {
+                dir.ChangeChannel(t);
+                std::copy(
+                    &VecField_[t][dim * NXtYtZ_],
+                    &VecField_[t][dim * NXtYtZ_] + NXtYtZ_,
+                    dir.Begin()
+                );
+            }
             dir.Image2World_ = Image2World_;
             dir.Write({ paths[dim] });
         }

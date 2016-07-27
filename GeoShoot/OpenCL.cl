@@ -269,9 +269,9 @@ __kernel void maxGrad(__global float * dst, __global const float * field, int4 d
     int4 coords = GET_GLOBAL_COORDS();
 
     G(dst, coords) = 2.f * sqrt(
-        pow(G(field, coords), 2)
-        + pow(G(field, coords + DIR_Y), 2)
-        + pow(G(field, coords + DIR_Z), 2)
+        pow(G(field, coords), 2.f)
+        + pow(G(field, coords + DIR_Y), 2.f)
+        + pow(G(field, coords + DIR_Z), 2.f)
     );
 }
 
@@ -300,10 +300,10 @@ __kernel void addFFT(__global float * filter, __global float * temp, float coeff
 }
 
 __kernel void copyFFT(__global float * out, __global const float * in,
-                   int NX_out, int NXtY_out, int NXtYtZ_out,
-                   int NX_in, int NXtY_in, int NXtYtZ_in,
-                   int dirOut, int dirIn,
-                   int strideOut, int strideIn) {
+                      int NX_out, int NXtY_out, int NXtYtZ_out,
+                      int NX_in, int NXtY_in, int NXtYtZ_in,
+                      int dirOut, int dirIn,
+                      int strideOut, int strideIn) {
     int x = get_global_id(0);
     int y = get_global_id(1);
     int z = get_global_id(2);

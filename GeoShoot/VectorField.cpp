@@ -20,11 +20,14 @@ namespace {
     template<class DataType>
     void FillFromFile(ScalarField & field, const nifti_1_header & hdr, std::ifstream & file) {
         DataType data;
-        for (auto z = 0; z < field.NZ(); ++z) {
-            for (auto y = 0; y < field.NY(); ++y) {
-                for (auto x = 0; x < field.NX(); ++x) {
-                    file.read((char*)&data, sizeof(DataType));
-                    field.P({ (float)data * hdr.scl_slope + hdr.scl_inter }, x, y, z);
+        for (auto t = 0; t < field.NT(); ++t) {
+            field.ChangeChannel(t);
+            for (auto z = 0; z < field.NZ(); ++z) {
+                for (auto y = 0; y < field.NY(); ++y) {
+                    for (auto x = 0; x < field.NX(); ++x) {
+                        file.read((char*)&data, sizeof(DataType));
+                        field.P({ (float)data * hdr.scl_slope + hdr.scl_inter }, x, y, z);
+                    }
                 }
             }
         }
@@ -41,7 +44,16 @@ ScalarField ScalarField::Read(const std::array<const char *, 1> & path) {
 
     file.read((char *)&hdr, MIN_HEADER_SIZE);
 
-    ScalarField field { hdr.dim[1], hdr.dim[2], hdr.dim[3] };
+    if (hdr.dim[4] == 1 && hdr.dim[5] > 1) {
+        hdr.dim[4] = hdr.dim[5];
+        hdr.dim[5] = 1;
+    }
+
+    if (hdr.dim[4] < 1)
+        hdr.dim[4] = 1;
+
+    ScalarField field { hdr.dim[1], hdr.dim[2], hdr.dim[3], hdr.dim[4] };
+
     if (hdr.sform_code > 0) {
         std::copy(&hdr.srow_x[0], &hdr.srow_x[0] + 4, field.Image2World_[0].begin());
         std::copy(&hdr.srow_y[0], &hdr.srow_y[0] + 4, field.Image2World_[1].begin());
@@ -154,7 +166,7 @@ void ScalarField::Write(const std::array<const char *, 1> & path) const {
     hdr.dim[1] = NX_;
     hdr.dim[2] = NY_;
     hdr.dim[3] = NZ_;
-    hdr.dim[4] = 1;
+    hdr.dim[4] = NT();
     hdr.datatype = NIFTI_TYPE_FLOAT32;
     hdr.bitpix = 32;
     hdr.qform_code = 0; // should ideally be set to 1 but I don't set the values of 'quatern_b', 'quatern_c' and 'quatern_d'
@@ -189,5 +201,7 @@ void ScalarField::Write(const std::array<const char *, 1> & path) const {
 
     file.write((char *)&hdr, MIN_HEADER_SIZE);
     file.write((char *)&pad, 4);
-    file.write((char *)&VecField_[0], sizeof(float) * VecField_.size());
+
+    for (auto t = 0; t < NT(); ++t)
+        file.write((char *)&VecField_[t][0], sizeof(float) * VecField_[t].size());
 }

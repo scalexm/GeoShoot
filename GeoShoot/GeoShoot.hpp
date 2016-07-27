@@ -16,7 +16,7 @@ using Matrix = std::array<std::array<float, Col>, Row>;
 
 class GeoShoot {
 private:
-    std::vector<VectorField<3>> DiffeoTimeLine_, InvDiffeoTimeLine_;
+    VectorField<3> DiffeoTimeLine_, InvDiffeoTimeLine_;
 
     compute::command_queue Queue_;
     FFTConvolver Convolver_;
@@ -34,7 +34,7 @@ private:
 
     template<class T>
     void Allocate(T & field) {
-        field = T { NX_, NY_, NZ_, Queue_.get_context() };
+        field = T { NX_, NY_, NZ_, 1, Queue_.get_context() };
     }
 
     template<class T>

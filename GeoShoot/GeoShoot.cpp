@@ -85,13 +85,8 @@ GeoShoot::GeoShoot(const ScalarField & source, const ScalarField & target,
                   << " and this is not the case here!" << std::endl;
     }
 
-    DiffeoTimeLine_.resize(N_ - 1);
-    InvDiffeoTimeLine_.resize(N_ - 1);
-
-    for (auto n = 0; n < N_ - 1; ++n) {
-        Allocate(DiffeoTimeLine_[n]);
-        Allocate(InvDiffeoTimeLine_[n]);
-    }
+    DiffeoTimeLine_ = VectorField<3> { NX_, NY_, NZ_, N_ - 1 };
+    InvDiffeoTimeLine_ = VectorField<3> { NX_, NY_, NZ_, N_ - 1 };
 }
 
 void GeoShoot::Shooting() {
@@ -128,17 +123,19 @@ void GeoShoot::Shooting() {
         // (Vector4_ is used by UpdateInvDiffeo as a temporary copy of Vector2_)
         UpdateInvDiffeo(Vector3_, Vector2_, Vector4_, DeltaT_, Queue_); // Vector2_ <- phi(tau + 1)
 
+        DiffeoTimeLine_.ChangeChannel(tau);
         compute::copy(
             Vector1_.Begin(),
             Vector1_.End(),
-            DiffeoTimeLine_[tau].Begin(),
+            DiffeoTimeLine_.Begin(),
             Queue_
         );
 
+        InvDiffeoTimeLine_.ChangeChannel(tau);
         compute::copy(
             Vector2_.Begin(),
             Vector2_.End(),
-            InvDiffeoTimeLine_[tau].Begin(),
+            InvDiffeoTimeLine_.Begin(),
             Queue_
         );
     }
@@ -209,17 +206,19 @@ void GeoShoot::ComputeGradient() {
     for (auto tau = N_ - 2; tau >= 0; --tau) {
         if (tau != N_ - 2) {
             // at tau = N_ - 2 we have just called Shoot(), so Vector1_ still contains phi(1)
+            DiffeoTimeLine_.ChangeChannel(tau);
             compute::copy(
-                DiffeoTimeLine_[tau].Begin(),
-                DiffeoTimeLine_[tau].End(),
+                DiffeoTimeLine_.Begin(),
+                DiffeoTimeLine_.End(),
                 Vector1_.Begin(),
                 Queue_
             );
 
             // same: Vector2_ still contains phi^{-1}(1)
+            InvDiffeoTimeLine_.ChangeChannel(tau);
             compute::copy(
-                InvDiffeoTimeLine_[tau].Begin(),
-                InvDiffeoTimeLine_[tau].End(),
+                InvDiffeoTimeLine_.Begin(),
+                InvDiffeoTimeLine_.End(),
                 Vector2_.Begin(),
                 Queue_
             );
@@ -350,9 +349,10 @@ void GeoShoot::Save(std::string path) {
 
     auto final = ScalarField { NX_, NY_, NZ_ };
     auto finalPath = path + "FinalDefSrc.nii";
+    InvDiffeoTimeLine_.ChangeChannel(N_ - 2);
     compute::copy(
-        InvDiffeoTimeLine_.back().Begin(),
-        InvDiffeoTimeLine_.back().End(),
+        InvDiffeoTimeLine_.Begin(),
+        InvDiffeoTimeLine_.End(),
         Vector1_.Begin(),
         Queue_
     );
