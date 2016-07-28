@@ -177,48 +177,6 @@ int Run(int argc, char ** argv) {
     compute::command_queue queue { GetContext(), GetDevice() };
     SetSourcePath(std::move(sourcePath));
 
-    /*auto i = ScalarField::Read({"/Users/alexm/Desktop/image.nii"});
-    compute::image3d field(GetContext(), i.NX(), i.NY(), i.NZ(),
-        compute::image_format { compute::image_format::r, compute::image_format::float32 },
-        CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, &i.Buffer()[0]);
-
-    compute::image3d grad(GetContext(), i.NX(), i.NY(), i.NZ(),
-        compute::image_format { compute::image_format::rgb, compute::image_format::float32 },
-        CL_MEM_READ_WRITE);
-
-    auto ffield = GPUScalarField { i.NX(), i.NY(), i.NZ(), 1, GetContext() };
-    auto ggrad = GPUVectorField<3> { i.NX(), i.NY(), i.NZ(), 1, GetContext() };
-    compute::copy(i.Begin(), i.End(), ffield.Begin(), queue);
-
-    std::vector<float> v(3 * i.NX() * i.NY() * i.NZ());
-
-    auto tp = std::chrono::system_clock::now();
-
-    auto kernel = GetProgram().create_kernel("gradientTest");
-    size_t workDim[3] = { (size_t) i.NX(), (size_t) i.NY(), (size_t) i.NZ() };
-    kernel.set_arg(0, grad);
-    kernel.set_arg(1, field);
-    size_t origin[3] = { 0, 0, 0 };
-    size_t region[3] = { (size_t) i.NX(), (size_t) i.NY(), (size_t) i.NZ() };
-    for (auto t = 0; t < 1; ++t) {
-        queue.enqueue_nd_range_kernel(kernel, 3, NULL, workDim, NULL);
-        queue.enqueue_read_image(grad, origin, region, 0, 0, &v[0]);
-    }
-
-    std::cout << (std::chrono::system_clock::now() - tp).count() << std::endl;
-
-    auto g = VectorField<3> { i.NX(), i.NY(), i.NZ() };
-    for (auto z = 0; z < i.NZ(); ++z) {
-        for (auto y = 0; y < i.NY(); ++y) {
-            for (auto x = 0; x < i.NX(); ++x) {
-                auto ind = x + y * i.NX() + z * i.NX() * i.NZ();
-                g.P({ v[3*ind], v[3*ind + 1], v[3*ind + 2] }, x, y, z);
-            }
-        }
-    }
-    g.Write({"/Users/alexm/Desktop/grad_x.nii", "/Users/alexm/Desktop/grad_y.nii", "/Users/alexm/Desktop/grad_z.nii"});
-    return 0;*/
-
     GeoShoot gs { std::move(image), std::move(target), std::move(momentum), transfo, N, queue };
 
     gs.Weights = std::move(weights);

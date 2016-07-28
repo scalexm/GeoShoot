@@ -96,59 +96,6 @@ __kernel void gradient(__global float * grad, __global const float * field, int4
         G(grad, coords + DIR_Z) = val / 2.f;
     }
 }
-
-/*__kernel void gradient2(__global float * grad, __global const float * field, int4 dims) {
-    int4 coords = GET_GLOBAL_COORDS();
-    float4 coords_f = (float4)(get_global_id(0), get_global_id(1), get_global_id(2), 0.f);
-
-    int z_cond = (dims.z != 1) && (coords.z == 0 || coords.z == dims.z - 1);
-    if (coords.x == 0 || coords.y == 0 || coords.x == dims.x - 1 || coords.y == dims.y - 1
-        || z_cond) {
-
-        G(grad, coords) = G(grad, coords + DIR_Y) = G(grad, coords + DIR_Z) = 0.f;
-    } else {
-        float val = interp(field, coords_f + (float4)(1.f, 0.f, 0.f, 0.f), dims) - interp(field, coords_f - (float4)(1.f, 0.f, 0.f, 0.f), dims);
-        G(grad, coords) = val / 2.f;
-
-        val = interp(field, coords_f + (float4)(0.f, 1.f, 0.f, 0.f), dims) - interp(field, coords_f - (float4)(0.f, 1.f, 0.f, 0.f), dims);
-        G(grad, (coords + DIR_Y)) = val / 2.f;
-
-        if (dims.z != 1)
-            val = interp(field, coords_f + (float4)(0.f, 0.f, 1.f, 0.f), dims) - interp(field, coords_f - (float4)(0.f, 0.f, 1.f, 0.f), dims);
-        else
-            val = 0.f;
-        G(grad, coords + DIR_Z) = val / 2.f;
-    }
-}
-
-__kernel void gradientTest(__write_only image3d_t grad, __read_only image3d_t field) {
-    int4 coords = GET_GLOBAL_COORDS();
-    float4 coords_f = (float4)(get_global_id(0), get_global_id(1), get_global_id(2), 0.f);
-    int4 dims = (int4)(get_image_width(grad), get_image_height(grad), get_image_depth(grad), 0);
-
-    const sampler_t sampler =
-        CLK_NORMALIZED_COORDS_FALSE |
-        CLK_ADDRESS_CLAMP_TO_EDGE |
-        CLK_FILTER_LINEAR;
-
-    int z_cond = (dims.z != 1) && (coords.z == 0 || coords.z == dims.z - 1);
-    if (coords.x == 0 || coords.y == 0 || coords.x == dims.x - 1 || coords.y == dims.y - 1
-        || z_cond) {
-
-        write_imagef(grad, coords, (float4)(0.f, 0.f, 0.f, 0.f));
-    } else {
-        float val_x = (read_imagef(field, sampler, coords_f + (float4)(1.f, 0.f, 0.f, 0.f)).x - read_imagef(field, sampler, coords_f - (float4)(1.f, 0.f, 0.f, 0.f)).x) / 2.f;
-        float val_y = (read_imagef(field, sampler, coords_f + (float4)(0.f, 1.f, 0.f, 0.f)).x - read_imagef(field, sampler, coords_f - (float4)(0.f, 1.f, 0.f, 0.f)).x) / 2.f;
-        float val_z = (read_imagef(field, sampler, coords_f + (float4)(0.f, 0.f, 1.f, 0.f)).x - read_imagef(field, sampler, coords_f - (float4)(0.f, 0.f, 1.f, 0.f)).x) / 2.f;
-
-        write_imagef(
-            grad,
-            coords,
-            (float4)(val_x, val_y, val_z, 0.f)
-        );
-    }
-}*/
-
 __kernel void div(__global float * div, __global const float * field, int4 dims) {
     int4 coords = GET_GLOBAL_COORDS();
 
