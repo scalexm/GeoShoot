@@ -21,41 +21,37 @@
 #include "../GeoShoot/GPU.hpp"
 #include "../GeoShoot/GeoShoot.hpp"
 
+ScalarField ComputePOUFromImage(const ScalarField &);
+void SmoothPOU(ScalarField &, float, compute::command_queue &);
+
 void usage() {
-  std::cerr << "Usage: geoshoot [Template] [Target] <options>\n";
-  std::cerr << "Where <options> are one or more of the following:\n";
-  std::cerr << "  Primary options:\n";
-  std::cerr << "    <-iterations n>             Number of iterations (default=10)\n";
-  std::cerr << "    <-subdivisions n>           Number of subdivisons between t=0 and t=1 (default=10)\n";
-  //cerr << "    <-UnderSampleTpl n>         Undersample the template image with a factor n (default n = 1)\n";
-  std::cerr << "    <-alpha n>                  Weight of the norm in the cost function (Default=0.001)\n";
-  std::cerr << "  Kernels (Default: -Gauss 3):\n";
-  std::cerr << "    <-Gauss n>                  Gaussian kernel of std. dev. Sigma (in mm)\n";
-  std::cerr << "    <-M_Gauss n>                Sum of Gaussian kernels (max 7)   --- n = k W1 S1 ... Wk Sk   (k=[#kernels], W.=weight, S.=Sigma in mm)\n" ;
-  std::cerr << "    <-M_Gauss_easier n>         Sum of 7 linearly sampled Gaussian kernels with apparent weights = 1    --- n = Smax Smin  (S. in mm)\n" ;
-  std::cerr << "  Inputs (default: nothing):\n";
-  std::cerr << "    <-InputInitMomentum n>      Initial Momentum to initiate the gradient descent (default=\"Null\")\n";
-  std::cerr << "    <-affineT n>                Affine transfo from Trg to Template in the world domain. The 4*3 parameters are: r_xx r_xy r_xz t_x  r_yx ... t_z\n";
-  //cerr << "    <-affineT_txt n>            Affine transfo from Trg to Template in the world domain. The 4*4 matrix is an ascii text file.\n";
-  std::cerr << "  Outputs (default: initial momentum in a nifti file):\n";
-  std::cerr << "    <-OutputPath n>             Output directory (default = \".\")";
-  //cerr << "    <-OutFinalDef>              Outputs the deformed template (Nothing by default)\n";
-  //cerr << "    <-OutDispField>             Outputs the displacement field in mm (Nothing by default)\n";
-  //cerr << "    <-OutDispFieldEvo>          Outputs the evolution of the displacement field in mm along the diffeomorphism (Nothing by default)\n";
-  //cerr << "    <-OutIniMoTxt n>            Outputs the initial momentum in an ascii file (default=\"Null\")\n";
-  //cerr << "    <-OutVeloField>             Outputs the 3D+t velocity field in voxels (Nothing by default)\n";
-  //cerr << "    <-OutDistEnSim>             Outputs the distance, enrgy and similarity measure (Nothing by default)\n";
-  //cerr << "    <-OutDeformation>           Outputs the 3D+t deformation (Nothing by default)\n";
-  //cerr << "    <-OutDiff_Tpl_DefTrg>       Outputs the difference between the template and the deformed target image (Nothing by default)\n";
-  std::cerr << "  Secondary options:\n";
-  std::cerr << "    <-MaxVeloUpdt n>            Size of the maximum updates of the vector field (Default=0.5 voxels)\n";
-  //std::cerr << "    <-margins n>                Margin of the image where the calculations are reduced  (default=3 voxels)\n";
-  //std::cerr << "    <-GreyLevAlign n>           Grey level linear alignment of each channel -- n = [Padding Src] [Padding Trg]\n";
-  //std::cerr << "    <-Mask n>                   Mask in which the momenta are computed (values!=0  -- in the template image domain)\n";
-  std::cerr << "  GPU options:\n";
-  std::cerr << "    <-Device n>                 Name of the device used for computations\n";
-  std::cerr << "    <-ShowDevices>              Show available devices and exit\n";
-  std::cerr << "    <-KernelSource n>           Path for the OpenCL kernels source (default=\"./OpenCL.cl\")\n";
+    std::cerr << "Usage: geoshoot [Source] [Target] [RegionsMask] [SigmaPOU] <options>\n";
+    std::cerr << "  Mandatory parameters:\n";
+    std::cerr << "   [Source]                     is the source (template/moving) image\n";
+    std::cerr << "   [Target]                     is the target (fixed) image\n";
+    std::cerr << "   [RegionsMask]                is a 3D mask representing the regions of the partition of unity (POU). It is in the [Source] image domain and has integer intensities only.\n";
+    std::cerr << "   [SigmaPOU]                   To define the POU, the regions of [PartitionOfUnity] are smoothed with a Gaussian kernel of std [SigmaPOU]. Note that [RegionsMask] will be considered as the actual 3D+t POU if [SigmaPOU]<0.\n";
+    std::cerr << "  Primary options:\n";
+    std::cerr << "    <-iterations n>             Number of iterations (default=10)\n";
+    std::cerr << "    <-subdivisions n>           Number of subdivisons between t=0 and t=1 (default=10)\n";
+    std::cerr << "    <-alpha n>                  Weight of the norm in the cost function (Default=0.001)\n";
+    std::cerr << "    <-SetRegionKernel n>        Set the kernel in region [Reg]. Region 0 is the one with the lowest intensity in [RegionsMask] and so on.\n";
+    std::cerr << "                                The kernel is the sum of [N] Gaussian kernels where [wn][sn] are the weight and std dev of n'th Gaussian kernels.\n";
+    std::cerr << "                                Parameters are n=([Reg]  [N][w1][s1]...[wN][sN]).\n";
+    std::cerr << "                                Default kernel in all regions and background is a Gaussian kernel with a std dev of 3mm.\n";
+    std::cerr << "    <-M_Gauss_easier n>         Sum of 7 linearly sampled Gaussian kernels with apparent weights = 1 in region Reg    --- n = Reg Smax Smin  (S. in mm)\n" ;
+    std::cerr << "  Inputs (default: nothing):\n";
+    std::cerr << "    <-InputInitMomentum n>      Initial Momentum to initiate the gradient descent (default=\"Null\")\n";
+    std::cerr << "    <-affineT n>                Affine transfo from Trg to Template in the world domain. The 4*3 parameters are: r_xx r_xy r_xz t_x  r_yx ... t_z\n";
+    std::cerr << "    <-affineT_txt n>            Affine transfo from Trg to Template in the world domain. The 4*4 matrix is an ascii text file.\n";
+    std::cerr << "  Outputs (default: initial momentum in a nifti file):\n";
+    std::cerr << "    <-OutputPath n>             Output directory (default = \".\")";
+    std::cerr << "  Secondary options:\n";
+    std::cerr << "    <-MaxVeloUpdt n>            Size of the maximum updates of the vector field (Default=0.5 voxels)\n";
+    std::cerr << "  GPU options:\n";
+    std::cerr << "    <-Device n>                 Name of the device used for computations\n";
+    std::cerr << "    <-ShowDevices>              Show available devices and exit\n";
+    std::cerr << "    <-KernelSource n>           Path for the OpenCL kernels source (default=\"./OpenCL.cl\")\n";
 }
 
 int Run(int argc, char ** argv) {
@@ -63,7 +59,7 @@ int Run(int argc, char ** argv) {
     int nbIterations = 10;
     std::string momentumPath, outputPath = "./", deviceName, sourcePath = "./OpenCL.cl";
 
-    if (argc < 3) {
+    if (argc < 5) {
         usage();
         return 1;
     }
@@ -71,17 +67,35 @@ int Run(int argc, char ** argv) {
     auto image = ScalarField::Read({ argv[1] });
     auto target = ScalarField::Read({ argv[2] });
 
-    argc -= 2;
-    argv += 2;
+    float sigmaPOU = atof(argv[4]);
+
+    ScalarField regions;
+    bool needSmoothing = false;
+    try {
+        regions = ScalarField::Read({ argv[3] });
+        if (regions.NT() == 1 && sigmaPOU >= 0.f) {
+            std::cout << "Computing POU..." << std::endl;
+            regions = ComputePOUFromImage(regions);
+            needSmoothing = true;
+        }
+        std::cout << regions.NT() << " regions found" << std::endl;
+    } catch (const std::invalid_argument &) {
+        regions = ScalarField { 0, 0, 0, 1 }; // dummy region
+    }
+
+    argc -= 4;
+    argv += 4;
 
     Matrix<4, 4> transfo;
     memset(&transfo[0], 0, 16 * sizeof(float));
     transfo[0][0] = transfo[1][1] = transfo[2][2] = transfo[3][3] = 1;
 
-    std::array<float, 7> weights = {{ 100.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f }},
-        sigmaXs = {{ 3.f, 3.f, 3.f, 3.f, 3.f, 3.f, 3.f }},
-        sigmaYs = {{ 3.f, 3.f, 3.f, 3.f, 3.f, 3.f, 3.f }},
-        sigmaZs = {{ 3.f, 3.f, 3.f, 3.f, 3.f, 3.f, 3.f }};
+    ConvolverCnf base;
+    base.Weights = { 1.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f };
+    base.SigmaXs = { 3.f, 3.f, 3.f, 3.f, 3.f, 3.f, 3.f };
+    base.SigmaYs = { 3.f, 3.f, 3.f, 3.f, 3.f, 3.f, 3.f };
+    base.SigmaZs = { 3.f, 3.f, 3.f, 3.f, 3.f, 3.f, 3.f };
+    std::vector<ConvolverCnf> configs(regions.NT(), base);
 
     float alpha = 0.001f, maxVeloUpdate = 0.5f;
 
@@ -112,39 +126,41 @@ int Run(int argc, char ** argv) {
                 transfo[(i - 1) / 4][(i - 1) % 4] = atof(argv[i]);
             argc -= 12;
             argv += 12;
-        } else if (arg == "-Gauss" && argc > 1) {
-            sigmaXs[0] = sigmaYs[0] = sigmaZs[0] = atof(argv[1]);
+        } else if (arg == "-SetRegionKernel" && argc > 2) {
+            auto region = atoi(argv[1]);
             --argc; ++argv;
-        } else if (arg == "-M_gauss" && argc > 1) {
+            auto & cnf = configs.at(region);
             auto temp = atoi(argv[1]);
             --argc; ++argv;
             for (auto i = 1; i <= 7; ++i) {
                 if (temp >= i && argc > 2) {
-                    weights[i - 1] = atof(argv[1]);
-                    sigmaXs[i - 1] = sigmaYs[i - 1] = sigmaZs[i - 1] = atof(argv[2]);
+                    cnf.Weights[i - 1] = atof(argv[1]);
+                    cnf.SigmaXs[i - 1] = cnf.SigmaYs[i - 1] = cnf.SigmaZs[i - 1] = atof(argv[2]);
                     argc -= 2;
                     argv += 2;
                 }
             }
-        } else if (arg == "-M_Gauss_easier" && argc > 2) {
-            sigmaXs[0] = atof(argv[1]);
-            sigmaXs[6] = atof(argv[2]);
-            argc -= 2;
-            argv += 2;
+        } else if (arg == "-M_Gauss_easier" && argc > 3) {
+            int region = atoi(argv[1]);
+            auto & cnf = configs.at(region);
+            cnf.SigmaXs[0] = atof(argv[2]);
+            cnf.SigmaXs[6] = atof(argv[3]);
+            argc -= 3;
+            argv += 3;
 
-            if (sigmaXs[0] < sigmaXs[6])
-                std::swap(sigmaXs[0], sigmaXs[6]);
+            if (cnf.SigmaXs[0] < cnf.SigmaXs[6])
+                std::swap(cnf.SigmaXs[0], cnf.SigmaXs[6]);
 
-            sigmaYs[0] = sigmaZs[0] = sigmaXs[0];
-            sigmaYs[6] = sigmaZs[6] = sigmaXs[6];
+            cnf.SigmaYs[0] = cnf.SigmaZs[0] = cnf.SigmaXs[0];
+            cnf.SigmaYs[6] = cnf.SigmaZs[6] = cnf.SigmaXs[6];
 
-            weights[0] = 0.f;
+            cnf.Weights[0] = 0.f;
 
-            auto a = (sigmaYs[6] - sigmaYs[0]) / 6.f;
-            auto b = sigmaYs[0] - a;
+            auto a = (cnf.SigmaYs[6] - cnf.SigmaYs[0]) / 6.f;
+            auto b = cnf.SigmaYs[0] - a;
 
             for (auto i = 2; i <= 6; ++i)
-                sigmaXs[i - 1] = sigmaYs[i - 1] = sigmaZs[i - 1] = i * a + b;
+                cnf.SigmaXs[i - 1] = cnf.SigmaYs[i - 1] = cnf.SigmaZs[i - 1] = i * a + b;
         } else if (arg == "-alpha" && argc > 1) {
             alpha = atof(argv[1]);
             --argc; ++argv;
@@ -177,12 +193,22 @@ int Run(int argc, char ** argv) {
     compute::command_queue queue { GetContext(), GetDevice() };
     SetSourcePath(std::move(sourcePath));
 
-    GeoShoot gs { std::move(image), std::move(target), std::move(momentum), transfo, N, queue };
+    if (needSmoothing) {
+        std::cout << "Smoothing POU..." << std::endl;
+        SmoothPOU(regions, sigmaPOU, queue);
+    }
 
-    gs.Weights = std::move(weights);
-    gs.SigmaXs = std::move(sigmaXs);
-    gs.SigmaYs = std::move(sigmaYs);
-    gs.SigmaZs = std::move(sigmaZs);
+    GeoShoot gs {
+        image,
+        target,
+        momentum,
+        std::move(regions),
+        transfo,
+        N,
+        queue
+    };
+
+    gs.ConvolverConfigs = std::move(configs);
     gs.Alpha = alpha;
     gs.MaxUpdate = maxVeloUpdate;
 

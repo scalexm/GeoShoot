@@ -23,12 +23,18 @@
 template<size_t Row, size_t Col>
 using Matrix = std::array<std::array<float, Col>, Row>;
 
+struct ConvolverCnf {
+    std::array<float, 7> Weights, SigmaXs, SigmaYs, SigmaZs;
+};
+
 class GeoShoot {
 private:
     VectorField<3> DiffeoTimeLine_, InvDiffeoTimeLine_;
 
     compute::command_queue Queue_;
-    FFTConvolver Convolver_;
+    std::vector<FFTConvolver> Convolvers_;
+    ScalarField InitialRegions_;
+    GPUScalarField Regions_;
     float DeltaT_, Cost_, Energy_, Xmm_, Ymm_, Zmm_;
 
     int N_;
@@ -39,7 +45,8 @@ private:
     GPUScalarField Source_, Target_, InitialMomentum_, GradientMomentum_;
 
     GPUScalarField Scalar1_, Scalar2_, Scalar3_, Scalar4_, Scalar5_;
-    GPUVectorField<3> Vector1_, Vector2_, Vector3_, Vector4_;
+    GPUVectorField<3> Vector1_, Vector2_, Vector3_, Vector4_, Vector5_, Vector6_;
+    GPUVectorField<2> FFTAccumulator_;
 
     template<class T>
     void Allocate(T & field) {
@@ -55,22 +62,22 @@ private:
         return { NX_, NY_, NZ_, 0 };
     }
 
-    void ReInitiateConvolver_HomoAppaWeights();
+    void Convolution(GPUVectorField<3> &, GPUVectorField<3> &, GPUVectorField<3> &);
+
+    void ReInitiateConvolver_HomoAppaWeights(FFTConvolver &, ConvolverCnf &);
 
     void Shooting();
     void ComputeGradient();
     void GradientDescent(int, float);
 public:
     GeoShoot(const ScalarField & source, const ScalarField & target, const ScalarField & momentum,
-             const Matrix<4, 4> & transfo, int N, compute::command_queue queue);
+             ScalarField regions, const Matrix<4, 4> & transfo, int N,
+             compute::command_queue queue);
 
     void Run(int iterationsNumber);
     void Save(std::string path);
 
-    std::array<float, 7> Weights = {{ 100.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f }},
-        SigmaXs = {{ 3.f, 3.f, 3.f, 3.f, 3.f, 3.f, 3.f }},
-        SigmaYs = {{ 3.f, 3.f, 3.f, 3.f, 3.f, 3.f, 3.f }},
-        SigmaZs = {{ 3.f, 3.f, 3.f, 3.f, 3.f, 3.f, 3.f }};
+    std::vector<ConvolverCnf> ConvolverConfigs;
 
     float Alpha = 0.001f, MaxUpdate = 0.5f;
 };

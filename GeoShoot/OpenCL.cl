@@ -15,8 +15,6 @@
 
  =========================================================================*/
 
-#pragma OPENCL EXTENSION cl_khr_3d_image_writes : enable
-
 #define U_X (int4)(1, 0, 0, 0)
 #define U_Y (int4)(0, 1, 0, 0)
 #define U_Z (int4)(0, 0, 1, 0)

@@ -16,11 +16,22 @@
  =========================================================================*/
 
 #include "FFTConvolver.hpp"
-#include "GPU.hpp"
-
-#define CHECK_ERROR(err) if (err != 0) { throw compute::opencl_error { err }; }
 
 FFTConvolver::FFTConvolver(compute::command_queue queue) : Queue_ { std::move(queue) } {
+}
+
+FFTConvolver::FFTConvolver(FFTConvolver && that) {
+    *this = std::move(that);
+}
+
+FFTConvolver & FFTConvolver::operator =(FFTConvolver && that) {
+    PlanHandle_ = that.PlanHandle_;
+    Queue_ = std::move(that.Queue_);
+    Filter_ = std::move(that.Filter_);
+    NXfft_ = that.NXfft_;
+    NYfft_ = that.NYfft_;
+    NZfft_ = that.NZfft_;
+    return *this;
 }
 
 FFTConvolver::~FFTConvolver() {
@@ -42,7 +53,6 @@ void FFTConvolver::InitiateConvolver(
     NZfft_ = (int)(pow(2., floor(log(NZ) / log(2.) + 0.99999)) + 0.00001);
 
     Filter_ = compute::vector<float>(2 * NXfft_ * NYfft_ * NZfft_, Queue_.get_context());
-    Signal_ = compute::vector<float>(2 * NXfft_ * NYfft_ * NZfft_, Queue_.get_context());
 
     if (PlanHandle_)
         clfftDestroyPlan(&PlanHandle_);
@@ -133,87 +143,4 @@ void FFTConvolver::MakeSumOf7AnisotropicGaussianFilters(
     );
 
     CHECK_ERROR(err);
-}
-
-void FFTConvolver::Convolution(GPUVectorField<3> & field) {
-    assert(field.NX() <= NXfft_);
-    assert(field.NY() <= NYfft_);
-    assert(field.NZ() <= NZfft_);
-
-    // copy between field and Signal_ (a signal which will be processed by clFFT), complying
-    // with clFFT complex interleaved layout
-    auto copyKernel = GetProgram().create_kernel("copyFFT");
-    size_t workDim[3] = { (size_t) field.NX(), (size_t) field.NY(), (size_t) field.NZ() };
-
-    auto filterKernel = GetProgram().create_kernel("filter");
-    size_t filterWorkDim[1] = { (size_t) NXfft_ * NYfft_ * NZfft_ };
-    filterKernel.set_arg(0, Signal_);
-    filterKernel.set_arg(1, Filter_);
-
-    // field maps to a 3D space
-    for (auto dir = 0; dir < 3; ++dir) {
-        compute::fill(Signal_.begin(), Signal_.end(), 0.f, Queue_);
-        // copy <field | e_dir> to signal
-        copyKernel.set_arg(0, Signal_);
-        copyKernel.set_arg(1, field.Buffer());
-        copyKernel.set_arg(2, NXfft_);
-        copyKernel.set_arg(3, NXfft_ * NYfft_);
-        copyKernel.set_arg(4, 0);
-        copyKernel.set_arg(5, field.NX());
-        copyKernel.set_arg(6, field.NX() * field.NY());
-        copyKernel.set_arg(7, field.NX() * field.NY() * field.NZ());
-        copyKernel.set_arg(8, 0);
-        copyKernel.set_arg(9, dir);
-        copyKernel.set_arg(10, 2);
-        copyKernel.set_arg(11, 1);
-        Queue_.enqueue_nd_range_kernel(copyKernel, 3, NULL, workDim, NULL);
-
-        // process FFT
-        auto err = clfftEnqueueTransform(
-            PlanHandle_,
-            CLFFT_FORWARD,
-            1,
-            &Queue_.get(),
-            0,
-            NULL,
-            NULL,
-            &Signal_.get_buffer().get(),
-            NULL,
-            NULL
-        );
-        CHECK_ERROR(err);
-
-        // apply filter
-        Queue_.enqueue_nd_range_kernel(filterKernel, 1, NULL, filterWorkDim, NULL);
-
-        // process IFFT
-        err = clfftEnqueueTransform(
-            PlanHandle_,
-            CLFFT_BACKWARD,
-            1,
-            &Queue_.get(),
-            0,
-            NULL,
-            NULL,
-            &Signal_.get_buffer().get(),
-            NULL,
-            NULL
-        );
-        CHECK_ERROR(err);
-
-        // copy back signal to <field | e_dir>
-        copyKernel.set_arg(0, field.Buffer());
-        copyKernel.set_arg(1, Signal_);
-        copyKernel.set_arg(2, field.NX());
-        copyKernel.set_arg(3, field.NX() * field.NY());
-        copyKernel.set_arg(4, field.NX() * field.NY() * field.NZ());
-        copyKernel.set_arg(5, NXfft_);
-        copyKernel.set_arg(6, NXfft_ * NYfft_);
-        copyKernel.set_arg(7, 0);
-        copyKernel.set_arg(8, dir);
-        copyKernel.set_arg(9, 0);
-        copyKernel.set_arg(10, 1);
-        copyKernel.set_arg(11, 2);
-        Queue_.enqueue_nd_range_kernel(copyKernel, 3, NULL, workDim, NULL);
-    }
 }
