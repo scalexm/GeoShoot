@@ -26,7 +26,7 @@ set (EXTRA_LIBS ${EXTRA_LIBS} ${OpenCL_LIBRARY})
 set (EXTRA_LIBS ${EXTRA_LIBS} ${OPENCL_LIBRARIES})
 set (EXTRA_LIBS ${EXTRA_LIBS} clFFT)
 
-add_executable (CLGeoShoot            App/regions.cpp App/main.cpp)
+add_executable (CLGeoShoot            App/Regions.cpp App/main.cpp)
 
 
 target_link_libraries (CLGeoShoot  ${EXTRA_LIBS})
