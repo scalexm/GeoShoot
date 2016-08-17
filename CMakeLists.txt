@@ -20,6 +20,8 @@ include_directories ("${PROJECT_SOURCE_DIR}/include/znzlib")
 add_subdirectory (GeoShoot)
 
 find_package(OpenCL)
+include_directories(${OpenCL_INCLUDE_DIRS})
+link_directories(${OpenCL_LIBRARY})
 
 set (EXTRA_LIBS ${EXTRA_LIBS} CLGS)
 set (EXTRA_LIBS ${EXTRA_LIBS} ${OpenCL_LIBRARY})
