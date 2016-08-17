@@ -19,8 +19,8 @@ add_subdirectory (GeoShoot)
 
 find_package (OpenCL)
 include_directories (${OPENCL_INCLUDE_DIRS})
-include_directories ("${PROJECT_SOURCE_DIR}/lib")
 
+link_directories ("${PROJECT_SOURCE_DIR}/lib")
 set (EXTRA_LIBS ${EXTRA_LIBS} CLGS)
 set (EXTRA_LIBS ${EXTRA_LIBS} ${OpenCL_LIBRARY})
 set (EXTRA_LIBS ${EXTRA_LIBS} ${OPENCL_LIBRARIES})
