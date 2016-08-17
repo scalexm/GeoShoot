@@ -40,7 +40,8 @@ private:
     int N_;
     int NX_, NY_, NZ_;
 
-    bool Init_ = false;
+    bool Init_ = false, InitTuning_ = false;
+    float RealW1_ = 0.f;
 
     GPUScalarField Source_, Target_, InitialMomentum_, GradientMomentum_;
 

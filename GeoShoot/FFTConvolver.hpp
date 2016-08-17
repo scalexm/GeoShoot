@@ -56,14 +56,16 @@ public:
         const std::array<float, 7> & weights = { 1.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f },
         const std::array<float, 7> & sigmaXs = { 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f },
         const std::array<float, 7> & sigmaYs = { 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f },
-        const std::array<float, 7> & sigmaZs = { 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f }
+        const std::array<float, 7> & sigmaZs = { 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f },
+        bool normalizeWeights = true
     );
 
     void ChangeKernel(
         const std::array<float, 7> & weights = { 1.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f },
         const std::array<float, 7> & sigmaXs = { 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f },
         const std::array<float, 7> & sigmaYs = { 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f },
-        const std::array<float, 7> & sigmaZs = { 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f }
+        const std::array<float, 7> & sigmaZs = { 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f },
+        bool normalizeWeights = true
     );
 
     compute::int4_ Dims() const {

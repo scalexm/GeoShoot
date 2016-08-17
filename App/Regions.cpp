@@ -17,6 +17,7 @@
 
 #include "../GeoShoot/FFTConvolver.hpp"
 #include <limits>
+#include <algorithm>
 
 ScalarField ComputePOUFromImage(const ScalarField & image) {
     std::vector<float> regions;
@@ -37,6 +38,8 @@ ScalarField ComputePOUFromImage(const ScalarField & image) {
             }
         }
     }
+
+    std::sort(regions.begin(), regions.end());
 
     auto POU = ScalarField { image.NX(), image.NY(), image.NZ(), (int) regions.size() };
 

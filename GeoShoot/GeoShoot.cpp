@@ -51,7 +51,11 @@ GeoShoot::GeoShoot(const ScalarField & source, const ScalarField & target,
     Allocate(Source_);
     Allocate(InitialMomentum_);
     Allocate(Target_);
-    Allocate(GradientMomentum_);
+
+    if (InitialRegions_.NT() == 1)
+        Allocate(GradientMomentum_);
+    else
+        GradientMomentum_ = GPUScalarField { NX_, NY_, NZ_, 2, GetContext() };
 
     // GPU fields used for computations
     Allocate(Scalar1_);
@@ -70,6 +74,17 @@ GeoShoot::GeoShoot(const ScalarField & source, const ScalarField & target,
     if (Regions_.NT() > 1) {
         Allocate(Vector5_);
         Allocate(Vector6_);
+
+        for (auto region = 0; region < Regions_.NT(); ++region) {
+            InitialRegions_.ChangeChannel(region);
+            Regions_.ChangeChannel(region);
+            compute::copy(
+                InitialRegions_.Begin(),
+                InitialRegions_.End(),
+                Regions_.Begin(),
+                Queue_
+            );
+        }
     }
 
     Convolvers_.reserve(Regions_.NT());
@@ -110,8 +125,6 @@ GeoShoot::GeoShoot(const ScalarField & source, const ScalarField & target,
     InvDiffeoTimeLine_ = VectorField<3> { NX_, NY_, NZ_, N_ - 1 };
 }
 
-bool ok = false;
-
 void GeoShoot::Convolution(GPUVectorField<3> & field, GPUVectorField<3> & acc1,
                            GPUVectorField<3> & acc2) {
     if (Regions_.NT() == 1) {
@@ -123,8 +136,7 @@ void GeoShoot::Convolution(GPUVectorField<3> & field, GPUVectorField<3> & acc1,
 
     for (auto region = 0; region < Regions_.NT(); ++region) {
         Regions_.ChangeChannel(region);
-        compute::copy(field.Begin(), field.End(), acc2.Begin(), Queue_);
-        ScalarFieldTimesVectorField(Regions_, acc2, acc2, 1.f, Queue_);
+        ScalarFieldTimesVectorField(Regions_, field, acc2, 1.f, Queue_);
         Convolvers_[region].Convolution(acc2, FFTAccumulator_);
         ScalarFieldTimesVectorField(Regions_, acc2, acc2, 1.f, Queue_);
         AddFields(acc1, acc2, acc1, 1.f, Queue_);
@@ -150,7 +162,7 @@ void GeoShoot::Shooting() {
         TransportImage(Source_, Vector2_, Scalar1_, Queue_); // Scalar1_ <- I(tau)
         ComputeGradScalarField(Scalar1_, Vector4_, Queue_); // Vector4_ <- nabla(I)
 
-        if (Regions_.NT() > 1) { // transport POU
+        /*if (Regions_.NT() > 1) { // transport POU
             for (auto region = 0; region < Regions_.NT(); ++region) {
                 InitialRegions_.ChangeChannel(region);
                 Regions_.ChangeChannel(region);
@@ -164,7 +176,7 @@ void GeoShoot::Shooting() {
 
                 TransportImage(Scalar1_, Vector2_, Regions_, Queue_);
             }
-        }
+        }*/
 
         TransportMomentum(InitialMomentum_, Vector2_, Scalar1_, Queue_); // Scalar1_ <- P(tau)
 
@@ -267,6 +279,22 @@ void GeoShoot::ComputeGradient() {
             // at tau = N_ - 2, Scalar3_ already contains I(1)
             TransportImage(Source_, Vector2_, Scalar3_, Queue_); // Scalar3_ <- I(tau)
         }
+
+        /*if (Regions_.NT() > 1) { // transport POU
+            for (auto region = 0; region < Regions_.NT(); ++region) {
+                InitialRegions_.ChangeChannel(region);
+                Regions_.ChangeChannel(region);
+
+                compute::copy(
+                    InitialRegions_.Begin(),
+                    InitialRegions_.End(),
+                    Scalar4_.Begin(),
+                    Queue_
+                );
+
+                TransportImage(Scalar4_, Vector2_, Regions_, Queue_);
+            }
+        }*/
         
         TransportMomentum(Scalar1_, Vector2_, Scalar4_, Queue_); // Scalar4_ <- \hat{I}(tau)
 
@@ -309,7 +337,6 @@ void GeoShoot::GradientDescent(int iterationsNumber, float gradientStep) {
         std::cout << "\tGradient iteration number " << (i + 1) << "\n";
         Shooting();
         ComputeGradient();
-        ok = true;
 
         if (Cost_ < currentCost) {
             if (Cost_ < optimizedCost) {
@@ -328,6 +355,45 @@ void GeoShoot::GradientDescent(int iterationsNumber, float gradientStep) {
             }
         }
 
+        /*if (Regions_.NT() > 1) {
+            InvDiffeoTimeLine_.ChangeChannel(N_ - 2);
+            compute::copy(
+                InvDiffeoTimeLine_.Begin(),
+                InvDiffeoTimeLine_.End(),
+                Vector1_.Begin(),
+                Queue_
+            );
+
+            for (auto region = 0; region < Regions_.NT(); ++region) {
+                InitialRegions_.ChangeChannel(region);
+                Regions_.ChangeChannel(region);
+
+                compute::copy(
+                    InitialRegions_.Begin(),
+                    InitialRegions_.End(),
+                    Scalar1_.Begin(),
+                    Queue_
+                );
+
+                TransportImage(Scalar1_, Vector1_, Regions_, Queue_);
+            }
+        }*/
+
+        if (i != 0 && Regions_.NT() > 1) {
+            GradientMomentum_.ChangeChannel(1);
+            compute::copy(GradientMomentum_.Begin(), GradientMomentum_.End(), Scalar1_.Begin(), Queue_);
+
+            GradientMomentum_.ChangeChannel(0);
+            AddFields(GradientMomentum_, Scalar1_, GradientMomentum_, 1.f, Queue_);
+            compute::transform(
+                GradientMomentum_.Begin(),
+                GradientMomentum_.End(),
+                GradientMomentum_.Begin(),
+                compute::_1 / 2.f,
+                Queue_
+            );
+        }
+
         currentCost = Cost_;
         ComputeGradScalarField(Source_, Vector1_, Queue_);
         ScalarFieldTimesVectorField(GradientMomentum_, Vector1_, Vector1_, -1.f, Queue_);
@@ -342,6 +408,13 @@ void GeoShoot::GradientDescent(int iterationsNumber, float gradientStep) {
             -temp * gradientStep,
             Queue_
         );
+
+        if (Regions_.NT() > 1) {
+            compute::copy(GradientMomentum_.Begin(), GradientMomentum_.End(), Scalar1_.Begin(), Queue_);
+            GradientMomentum_.ChangeChannel(1);
+            compute::copy(Scalar1_.Begin(), Scalar1_.End(), GradientMomentum_.Begin(), Queue_);
+            GradientMomentum_.ChangeChannel(0);
+        }
     }
 }
 
@@ -360,11 +433,11 @@ void GeoShoot::Run(int iterationsNumber) {
                 cnf.SigmaZs[i] /= Zmm_;
             }
 
-            if (fabs(cnf.Weights[0]) > 0.01f) {
+            /*if (fabs(cnf.Weights[0]) > 0.01f) {
                 auto sum = std::accumulate(cnf.Weights.begin(), cnf.Weights.end(), 0.f);
                 for (auto && w : cnf.Weights)
                     w /= sum;
-            }
+            }*/
 
             cnv.InitiateConvolver(
                 NX_, NY_, NZ_,
@@ -380,16 +453,7 @@ void GeoShoot::Run(int iterationsNumber) {
             }
 
             if (fabs(cnf.Weights[0]) < 0.01f) {
-                if (Regions_.NT() > 1) {
-                    InitialRegions_.ChangeChannel(region);
-                    Regions_.ChangeChannel(region);
-                    compute::copy(
-                        InitialRegions_.Begin(),
-                        InitialRegions_.End(),
-                        Regions_.Begin(),
-                        Queue_
-                    );
-                }
+                Regions_.ChangeChannel(region);
                 std::cout << "Tuning kernels in region " << region << std::endl;
                 ReInitiateConvolver_HomoAppaWeights(cnv, cnf);
             }
@@ -431,6 +495,32 @@ void GeoShoot::Save(std::string path) {
         dispPathY.c_str(),
         dispPathZ.c_str()
     });
+
+    if (Regions_.NT() > 1) { // transport POU
+        for (auto region = 0; region < Regions_.NT(); ++region) {
+            InitialRegions_.ChangeChannel(region);
+            Regions_.ChangeChannel(region);
+
+            compute::copy(
+                InitialRegions_.Begin(),
+                InitialRegions_.End(),
+                Scalar1_.Begin(),
+                Queue_
+            );
+
+            TransportImage(Scalar1_, Vector1_, Regions_, Queue_);
+
+            compute::copy(
+                Regions_.Begin(),
+                Regions_.End(),
+                InitialRegions_.Begin(),
+                Queue_
+            );
+        }
+
+        auto p = path + "deformedPOU.nii";
+        InitialRegions_.Write({p.c_str()});
+    }
 }
 
 void GeoShoot::ReInitiateConvolver_HomoAppaWeights(FFTConvolver & cnv,
@@ -466,16 +556,17 @@ void GeoShoot::ReInitiateConvolver_HomoAppaWeights(FFTConvolver & cnv,
         auto it = compute::max_element(Scalar1_.Begin(), Scalar1_.End(), Queue_);
         auto maxGrad = it.read(Queue_);
 
-        if (i == 0) {
+        if (!InitTuning_) {
             cnf.Weights[i] = 100.f;
-            realW1 = 1.f / maxGrad;
+            RealW1_ = 1.f / maxGrad;
+            InitTuning_ = true;
         } else
-            cnf.Weights[i] = 100.f / maxGrad / realW1;
+            cnf.Weights[i] = 100.f / maxGrad / RealW1_;
 
         std::cout << "sigma" << (i + 1) << " = " << (cnf.SigmaXs[i] * Xmm_)
                   << " / weight" << (i + 1) << " = " << cnf.Weights[i] << "\n";
     }
 
     std::cout << std::endl;
-    cnv.ChangeKernel(cnf.Weights, cnf.SigmaXs, cnf.SigmaYs, cnf.SigmaZs);
+    cnv.ChangeKernel(cnf.Weights, cnf.SigmaXs, cnf.SigmaYs, cnf.SigmaZs, Regions_.NT() == 1);
 }

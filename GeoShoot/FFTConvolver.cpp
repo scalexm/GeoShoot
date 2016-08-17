@@ -44,7 +44,8 @@ void FFTConvolver::InitiateConvolver(
     const std::array<float, 7> & weights,
     const std::array<float, 7> & sigmaXs,
     const std::array<float, 7> & sigmaYs,
-    const std::array<float, 7> & sigmaZs
+    const std::array<float, 7> & sigmaZs,
+    bool normalizeWeights
 ) {
 
     //smaller size higher than 'this->NX' and being a power of 2
@@ -71,7 +72,7 @@ void FFTConvolver::InitiateConvolver(
     err = clfftBakePlan(PlanHandle_, 1, &Queue_.get(), NULL, NULL);
     CHECK_ERROR(err);
 
-    ChangeKernel(weights, sigmaXs, sigmaYs, sigmaZs);
+    ChangeKernel(weights, sigmaXs, sigmaYs, sigmaZs, normalizeWeights);
         
 }
 
@@ -79,9 +80,10 @@ void FFTConvolver::ChangeKernel(
     const std::array<float, 7> & weights,
     const std::array<float, 7> & sigmaXs,
     const std::array<float, 7> & sigmaYs,
-    const std::array<float, 7> & sigmaZs
+    const std::array<float, 7> & sigmaZs,
+    bool normalizeWeights
 ) {
-    MakeSumOf7AnisotropicGaussianFilters(weights, sigmaXs, sigmaYs, sigmaZs, true);
+    MakeSumOf7AnisotropicGaussianFilters(weights, sigmaXs, sigmaYs, sigmaZs, normalizeWeights);
 }
 
 void FFTConvolver::MakeSumOf7AnisotropicGaussianFilters(
