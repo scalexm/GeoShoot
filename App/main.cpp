@@ -198,6 +198,8 @@ int Run(int argc, char ** argv) {
         SmoothPOU(regions, sigmaPOU, queue);
     }
 
+    auto tp = std::chrono::system_clock::now();
+
     GeoShoot gs {
         image,
         target,
@@ -214,6 +216,8 @@ int Run(int argc, char ** argv) {
 
     gs.Run(nbIterations);
     queue.finish();
+
+    std::cout << (std::chrono::system_clock::now() - tp).count() << std::endl;
 
     gs.Save(outputPath);
 
